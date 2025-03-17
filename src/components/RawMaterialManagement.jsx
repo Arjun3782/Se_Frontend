@@ -1,39 +1,40 @@
 import { useEffect, useState } from "react";
-import { useDispatch, useSelector } from "react-redux";
-import { addRawMaterial, fetchRawMaterial } from "../features/materialSlice";
+// import { useDispatch, useSelector } from "react-redux";
+// import { addRawMaterial, fetchRawMaterial } from "../features/materialSlice";
+import { useForm } from "react-hook-form";
 import "./RawMaterialManagement.css";
 
 export default function RawMaterialManagement() {
-  const dispatch = useDispatch();
+  // const dispatch = useDispatch();
 
-  //TODO: create a obj that pass the data to the redux store
-  const [testObj, setTestObj] = useState({
-    s_id: "3",
-    s_name: "jd",
-    ph_no: "1234567890",
-    address: "surat",
-    p_id: "2",
-    p_name: "potato",
-    quantity: "10",
-    price: "20",
-    total_price: "200",
-    date: new Date().toISOString().slice(0, 16),
-  });
-
-  // TODO: create a function that will dispatch the action to the redux store
-  const handleData = () => {
-    dispatch(addRawMaterial(testObj));
-  };
+  // //TODO: create a obj that pass the data to the redux store
+  // const [testObj, setTestObj] = useState({
+  //   s_id: "3",
+  //   s_name: "jd",
+  //   ph_no: "1234567890",
+  //   address: "surat",
+  //   p_id: "2",
+  //   p_name: "potato",
+  //   quantity: "10",
+  //   price: "20",
+  //   total_price: "200",
+  //   date: new Date().toISOString().slice(0, 16),
+  // });
 
   // // TODO: create a function that will dispatch the action to the redux store
-  const handleFetch = () => {
-    dispatch(fetchRawMaterial());
-  };
+  // const handleData = () => {
+  //   dispatch(addRawMaterial(testObj));
+  // };
 
-  // TODO: this will fetch the data from the redux store
-  const rawMaterials = useSelector((state) => state.material.rawMaterial);
-  const loading = useSelector((state) => state.material.loading);
-  console.log("Raw: ", rawMaterials);
+  // // // TODO: create a function that will dispatch the action to the redux store
+  // const handleFetch = () => {
+  //   dispatch(fetchRawMaterial());
+  // };
+
+  // // TODO: this will fetch the data from the redux store
+  // const rawMaterials = useSelector((state) => state.material.rawMaterial);
+  // const loading = useSelector((state) => state.material.loading);
+  // console.log("Raw: ", rawMaterials);
 
   const [materials, setMaterials] = useState([]);
   const [sellers, setSellers] = useState({});
@@ -161,13 +162,11 @@ export default function RawMaterialManagement() {
 
   return (
     <>
-      <div> {/*TODO: this is for testing purpose*/}
+      {/* <div>
         <div>
-          {/*TODO: this is for testing purpose*/}
           <button onClick={handleData}>Send data</button>
         </div>
         <div>
-          {/*TODO: this is for testing purpose */}
           <button onClick={handleFetch}>Fetch Data</button>
         </div>
         <div>
@@ -181,7 +180,7 @@ export default function RawMaterialManagement() {
             </ul>
           )}
         </div>
-      </div>
+      </div> */}
       <div className="container">
         {/* Dashboard Section */}
         <div className="dashboard">
