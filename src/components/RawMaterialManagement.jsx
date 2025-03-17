@@ -36,6 +36,19 @@ export default function RawMaterialManagement() {
   // const loading = useSelector((state) => state.material.loading);
   // console.log("Raw: ", rawMaterials);
 
+//TODO: create a useForm
+  const {
+    register,
+    handleSubmit,
+    setValue,
+    watch,
+    formState: { errors, isSubmitting },
+  } = useForm();
+
+  const onSubmit = (data) => {
+    console.log(data);
+  };
+
   const [materials, setMaterials] = useState([]);
   const [sellers, setSellers] = useState({});
   const [products, setProducts] = useState({});
