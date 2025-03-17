@@ -5,50 +5,40 @@ import { useForm } from "react-hook-form";
 import "./RawMaterialManagement.css";
 
 export default function RawMaterialManagement() {
-  // const dispatch = useDispatch();
-
-  // //TODO: create a obj that pass the data to the redux store
-  // const [testObj, setTestObj] = useState({
-  //   s_id: "3",
-  //   s_name: "jd",
-  //   ph_no: "1234567890",
-  //   address: "surat",
-  //   p_id: "2",
-  //   p_name: "potato",
-  //   quantity: "10",
-  //   price: "20",
-  //   total_price: "200",
-  //   date: new Date().toISOString().slice(0, 16),
-  // });
-
-  // // TODO: create a function that will dispatch the action to the redux store
-  // const handleData = () => {
-  //   dispatch(addRawMaterial(testObj));
-  // };
-
-  // // // TODO: create a function that will dispatch the action to the redux store
-  // const handleFetch = () => {
-  //   dispatch(fetchRawMaterial());
-  // };
-
-  // // TODO: this will fetch the data from the redux store
-  // const rawMaterials = useSelector((state) => state.material.rawMaterial);
-  // const loading = useSelector((state) => state.material.loading);
-  // console.log("Raw: ", rawMaterials);
-
-//TODO: create a useForm
   const {
     register,
     handleSubmit,
     setValue,
     watch,
-    formState: { errors, isSubmitting },
-  } = useForm();
+    reset,
+    formState: { errors },
+  } = useForm({
+    defaultValues: {
+      sellerId: "",
+      sellerName: "",
+      sellerMobile: "",
+      sellerAddress: "",
+      productId: "",
+      productName: "",
+      quantity: "",
+      price: "",
+      totalPrice: "",
+      date: new Date().toISOString().slice(0, 16),
+    }
+  });
 
-  const onSubmit = (data) => {
-    console.log(data);
-  };
+  // Watch for quantity and price changes
+  const watchQuantity = watch("quantity");
+  const watchPrice = watch("price");
 
+  useEffect(() => {
+    if (watchQuantity && watchPrice) {
+      const total = (Number(watchQuantity) * Number(watchPrice)).toFixed(2);
+      setValue("totalPrice", total);
+    }
+  }, [watchQuantity, watchPrice, setValue]);
+
+  // State declarations
   const [materials, setMaterials] = useState([]);
   const [sellers, setSellers] = useState({});
   const [products, setProducts] = useState({});
@@ -56,64 +46,25 @@ export default function RawMaterialManagement() {
   const [isUpdating, setIsUpdating] = useState(false);
   const [updateIndex, setUpdateIndex] = useState(null);
   const [searchDate, setSearchDate] = useState("");
-  const [form, setForm] = useState({
-    sellerId: "",
-    sellerName: "",
-    sellerMobile: "",
-    sellerAddress: "",
-    productId: "",
-    productName: "",
-    quantity: "",
-    price: "",
-    totalPrice: "",
-    date: new Date().toISOString().slice(0, 16),
-  });
 
-  // Update Form Input
-  const handleChange = (e) => {
-    const { name, value } = e.target;
-    setForm((prev) => {
-      // console.log(name, value);
-      let updatedForm = { ...prev, [name]: value };
-
-      if (name === "sellerId" && sellers[value]) {
-        updatedForm = { ...updatedForm, ...sellers[value] };
-      }
-      if (name === "productId" && products[value]) {
-        updatedForm.productName = products[value];
-      }
-      if (name === "quantity" || name === "price") {
-        updatedForm.totalPrice =
-          updatedForm.quantity && updatedForm.price
-            ? (
-                Number(updatedForm.quantity) * Number(updatedForm.price)
-              ).toFixed(2)
-            : "";
-      }
-      return updatedForm;
-    });
+  // Handle seller and product lookups
+  const handleIdChange = (name, value) => {
+    if (name === "sellerId" && sellers[value]) {
+      setValue("sellerName", sellers[value].sellerName);
+      setValue("sellerMobile", sellers[value].sellerMobile);
+      setValue("sellerAddress", sellers[value].sellerAddress);
+    }
+    if (name === "productId" && products[value]) {
+      setValue("productName", products[value]);
+    }
   };
 
-  // Add or Update Material
-  const handleAddOrUpdateMaterial = () => {
-    if (
-      !form.sellerId ||
-      !form.sellerName ||
-      !form.sellerMobile ||
-      !form.sellerAddress ||
-      !form.productId ||
-      !form.productName ||
-      !form.quantity ||
-      !form.price
-    ) {
-      alert("Please fill in all fields.");
-      return;
-    }
-
+  // Form submission handler
+  const onSubmit = (data) => {
     const newMaterial = {
-      ...form,
-      quantity: Number(form.quantity),
-      price: Number(form.price),
+      ...data,
+      quantity: Number(data.quantity),
+      price: Number(data.price),
     };
 
     if (isUpdating) {
@@ -126,48 +77,38 @@ export default function RawMaterialManagement() {
 
     setSellers((prev) => ({
       ...prev,
-      [form.sellerId]: {
-        sellerName: form.sellerName,
-        sellerMobile: form.sellerMobile,
-        sellerAddress: form.sellerAddress,
+      [data.sellerId]: {
+        sellerName: data.sellerName,
+        sellerMobile: data.sellerMobile,
+        sellerAddress: data.sellerAddress,
       },
     }));
-    setProducts((prev) => ({ ...prev, [form.productId]: form.productName }));
+    setProducts((prev) => ({ ...prev, [data.productId]: data.productName }));
 
-    setForm({
-      sellerId: "",
-      sellerName: "",
-      sellerMobile: "",
-      sellerAddress: "",
-      productId: "",
-      productName: "",
-      quantity: "",
-      price: "",
-      totalPrice: "",
-      date: new Date().toISOString().slice(0, 16),
-    });
+    reset();
     setIsFormOpen(false);
   };
 
-  // Open Form for Editing
+  // Handle edit with React Hook Form
   const handleEdit = (index) => {
-    setForm(materials[index]);
+    const material = materials[index];
+    reset(material); // Reset form with material data
     setIsUpdating(true);
     setUpdateIndex(index);
     setIsFormOpen(true);
   };
 
-  // Delete Material
+  // Handle delete
   const handleDelete = (index) => {
     setMaterials(materials.filter((_, i) => i !== index));
   };
 
-  // Filter Data by Date
+  // Filter materials by date
   const filteredMaterials = searchDate
     ? materials.filter((mat) => mat.date.startsWith(searchDate))
     : materials;
 
-  // Calculate Total Stock
+  // Calculate total stock
   const totalStock = materials.reduce((acc, mat) => {
     acc[mat.productName] = (acc[mat.productName] || 0) + mat.quantity;
     return acc;
@@ -225,82 +166,118 @@ export default function RawMaterialManagement() {
           <div className="overlay">
             <div className="form-popup">
               <h3>{isUpdating ? "Update Material" : "Add Material"}</h3>
-              <input
-                name="sellerId"
-                value={form.sellerId}
-                onChange={handleChange}
-                placeholder="Seller ID"
-              />
-              <input
-                name="sellerName"
-                value={form.sellerName}
-                onChange={handleChange}
-                placeholder="Seller Name"
-              />
-              <input
-                name="sellerMobile"
-                value={form.sellerMobile}
-                onChange={handleChange}
-                placeholder="Seller Mobile"
-              />
-              <input
-                name="sellerAddress"
-                value={form.sellerAddress}
-                onChange={handleChange}
-                placeholder="Seller Address"
-              />
-              <input
-                name="productId"
-                value={form.productId}
-                onChange={handleChange}
-                placeholder="Product ID"
-              />
-              <input
-                name="productName"
-                value={form.productName}
-                onChange={handleChange}
-                placeholder="Product Name"
-              />
-              <input
-                name="quantity"
-                type="number"
-                value={form.quantity}
-                onChange={handleChange}
-                placeholder="Quantity (kg)"
-              />
-              <input
-                name="price"
-                type="number"
-                value={form.price}
-                onChange={handleChange}
-                placeholder="Price"
-              />
-              <input
-                name="totalPrice"
-                value={form.totalPrice}
-                readOnly
-                placeholder="Total Price"
-              />
-              <input
-                type="datetime-local"
-                name="date"
-                value={form.date}
-                onChange={handleChange}
-              />
-              <div className="buttons">
-                <button
-                  className="save-button"
-                  onClick={() => [handleAddOrUpdateMaterial()]} //FIXME: pass the function for dispatching the action
-                >
-                  {isUpdating ? "Update" : "Add"}
-                </button>
-                <button
-                  className="cancel-button"
-                  onClick={() => setIsFormOpen(false)}
-                >
-                  Cancel
-                </button>
-              </div>
+              <form onSubmit={handleSubmit(onSubmit)}>
+                <div>
+                  <input
+                    {...register("sellerId", { required: "Seller ID is required" })}
+                    placeholder="Seller ID"
+                    onChange={(e) => handleIdChange("sellerId", e.target.value)}
+                  />
+                  {errors.sellerId && <span className="error">{errors.sellerId.message}</span>}
+                </div>
+
+                <div>
+                  <input
+                    {...register("sellerName", { required: "Seller Name is required" })}
+                    placeholder="Seller Name"
+                  />
+                  {errors.sellerName && <span className="error">{errors.sellerName.message}</span>}
+                </div>
+
+                <div>
+                  <input
+                    {...register("sellerMobile", {
+                      required: "Mobile number is required",
+                      pattern: {
+                        value: /^[0-9]{10}$/,
+                        message: "Enter valid 10-digit mobile number"
+                      }
+                    })}
+                    placeholder="Seller Mobile"
+                  />
+                  {errors.sellerMobile && <span className="error">{errors.sellerMobile.message}</span>}
+                </div>
+
+                <div>
+                  <input
+                    {...register("sellerAddress", { required: "Address is required" })}
+                    placeholder="Seller Address"
+                  />
+                  {errors.sellerAddress && <span className="error">{errors.sellerAddress.message}</span>}
+                </div>
+
+                <div>
+                  <input
+                    {...register("productId", { required: "Product ID is required" })}
+                    placeholder="Product ID"
+                    onChange={(e) => handleIdChange("productId", e.target.value)}
+                  />
+                  {errors.productId && <span className="error">{errors.productId.message}</span>}
+                </div>
+
+                <div>
+                  <input
+                    {...register("productName", { required: "Product Name is required" })}
+                    placeholder="Product Name"
+                  />
+                  {errors.productName && <span className="error">{errors.productName.message}</span>}
+                </div>
+
+                <div>
+                  <input
+                    type="number"
+                    {...register("quantity", {
+                      required: "Quantity is required",
+                      min: { value: 0, message: "Quantity must be positive" }
+                    })}
+                    placeholder="Quantity (kg)"
+                  />
+                  {errors.quantity && <span className="error">{errors.quantity.message}</span>}
+                </div>
+
+                <div>
+                  <input
+                    type="number"
+                    {...register("price", {
+                      required: "Price is required",
+                      min: { value: 0, message: "Price must be positive" }
+                    })}
+                    placeholder="Price"
+                  />
+                  {errors.price && <span className="error">{errors.price.message}</span>}
+                </div>
+
+                <div>
+                  <input
+                    {...register("totalPrice")}
+                    readOnly
+                    placeholder="Total Price"
+                  />
+                </div>
+
+                <div>
+                  <input
+                    type="datetime-local"
+                    {...register("date")}
+                  />
+                </div>
+
+                <div className="buttons">
+                  <button type="submit" className="save-button">
+                    {isUpdating ? "Update" : "Add"}
+                  </button>
+                  <button
+                    type="button"
+                    className="cancel-button"
+                    onClick={() => {
+                      reset();
+                      setIsFormOpen(false);
+                    }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </form>
             </div>
           </div>
         )}
