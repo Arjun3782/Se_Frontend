@@ -126,6 +126,10 @@ export default function RawMaterialManagement() {
   };
 
   // Update onSubmit to save new data to localStorage
+  // Remove this line as it's not needed
+  // const [materials, setMaterials] = useState([]);
+  
+  // Update onSubmit function
   const onSubmit = (data) => {
     const newMaterial = {
       s_id: data.sellerId,
@@ -148,6 +152,7 @@ export default function RawMaterialManagement() {
           setUpdateIndex(null);
           reset();
           setIsFormOpen(false);
+          dispatch(fetchRawMaterial());
         })
         .catch((error) => {
           console.error("Failed to update material:", error);
@@ -158,6 +163,7 @@ export default function RawMaterialManagement() {
         .then(() => {
           reset();
           setIsFormOpen(false);
+          dispatch(fetchRawMaterial());
         })
         .catch((error) => {
           console.error("Failed to add material:", error);
@@ -197,7 +203,8 @@ export default function RawMaterialManagement() {
     dispatch(deleteRawMaterial(id))
       .unwrap()
       .then(() => {
-        // Material deleted successfully
+        // Fetch fresh data after successful deletion
+        dispatch(fetchRawMaterial());
       })
       .catch((error) => {
         console.error("Failed to delete material:", error);
