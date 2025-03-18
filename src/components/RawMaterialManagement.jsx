@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-// import { useDispatch, useSelector } from "react-redux";
-// import { addRawMaterial, fetchRawMaterial } from "../features/materialSlice";
+import { useDispatch, useSelector } from "react-redux";
+import { addRawMaterial, fetchRawMaterial, deleteRawMaterial, updateRawMaterial } from "../features/materialSlice";
 import { useForm } from "react-hook-form";
 import "./RawMaterialManagement.css";
 

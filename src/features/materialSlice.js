@@ -40,6 +40,37 @@ export const fetchRawMaterial = createAsyncThunk(
   }
 );
 
+//update raw material
+export const updateRawMaterial = createAsyncThunk(
+  "material/updateRawMaterial",
+  async (data) => {
+    try {
+      const response = await axios.put(
+        `http://localhost:3000/api/rawMaterial/updateRawMaterial/${data._id}`,
+        data
+      );
+      return response.data;
+    } catch (error) {
+      throw error;
+    }
+  }
+);
+
+//delete raw material
+export const deleteRawMaterial = createAsyncThunk(
+  "material/deleteRawMaterial",
+  async (id) => {
+    try {
+      const response = await axios.delete(
+        `http://localhost:3000/api/rawMaterial/deleteRawMaterial/${id}`
+      );
+      return response.data;
+    } catch (error) {
+      throw error;
+    }
+  }
+);
+
 export const materialSlice = createSlice({
   name: "material",
   initialState,
@@ -71,10 +102,48 @@ export const materialSlice = createSlice({
     builder.addCase(fetchRawMaterial.fulfilled, (state, action) => {
       state.loading = false;
       //   console.log(action.payload.r_data);
-      state.rawMaterial = action.payload.r_data;;
-    //   console.log(state.rawMaterial);
+      state.rawMaterial = action.payload.r_data;
+      //   console.log(state.rawMaterial);
     });
     builder.addCase(fetchRawMaterial.rejected, (state, action) => {
+      state.loading = false;
+      state.error = action.payload;
+    });
+
+    // Update Raw Material
+    builder.addCase(updateRawMaterial.pending, (state) => {
+      state.loading = true;
+      state.error = null;
+    });
+    builder.addCase(updateRawMaterial.fulfilled, (state, action) => {
+      state.loading = false;
+      // Find the index of the updated material
+      const index = state.rawMaterial.findIndex(
+        (material) => material._id === action.payload._id
+      );
+      if (index !== -1) {
+        // Update the material in the state
+        state.rawMaterial[index] = action.payload;
+      }
+    });
+    builder.addCase(updateRawMaterial.rejected, (state, action) => {
+      state.loading = false;
+      state.error = action.payload;
+    });
+
+    // Delete Raw Material
+    builder.addCase(deleteRawMaterial.pending, (state) => {
+      state.loading = true;
+      state.error = null;
+    });
+    builder.addCase(deleteRawMaterial.fulfilled, (state, action) => {
+      state.loading = false;
+      // Remove the deleted material from the state
+      state.rawMaterial = state.rawMaterial.filter(
+        (material) => material._id !== action.payload._id
+      );
+    });
+    builder.addCase(deleteRawMaterial.rejected, (state, action) => {
       state.loading = false;
       state.error = action.payload;
     });
