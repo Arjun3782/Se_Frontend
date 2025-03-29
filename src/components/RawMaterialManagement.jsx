@@ -218,7 +218,14 @@ export default function RawMaterialManagement() {
 
   // Calculate total stock
   const totalStock = rawMaterial.reduce((acc, mat) => {
-    acc[mat.productName] = (acc[mat.productName] || 0) + mat.quantity;
+    const productName = mat.p_name;
+    if (!acc[productName]) {
+      acc[productName] = {
+        total: 0,
+        unit: 'kg'
+      };
+    }
+    acc[productName].total += Number(mat.quantity);
     return acc;
   }, {});
 
@@ -229,10 +236,10 @@ export default function RawMaterialManagement() {
         <div className="dashboard">
           <h2>Inventory Dashboard</h2>
           <div className="stock-overview">
-            {Object.entries(totalStock).map(([product, qty]) => (
+            {Object.entries(totalStock).map(([product, data]) => (
               <div className="stock-card" key={product}>
                 <h3>{product}</h3>
-                <p>{qty} kg</p>
+                <p>{data.total.toFixed(2)} {data.unit}</p>
               </div>
             ))}
           </div>

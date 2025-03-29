@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useForm, useFieldArray } from "react-hook-form";
 import "./ProductionManagement.css";
 
 export default function ProductionManagement({ rawMaterials, setRawMaterials }) {
@@ -7,111 +8,238 @@ export default function ProductionManagement({ rawMaterials, setRawMaterials }) 
   const [isProductFormOpen, setIsProductFormOpen] = useState(false);
   const [isProductionFormOpen, setIsProductionFormOpen] = useState(false);
 
-  const [productForm, setProductForm] = useState({
-    productId: "",
-    productName: "",
-    rawMaterialUsage: {},
-    quantityPerPacket: "",
+  // Product Form
+  const {
+    register: registerProduct,
+    handleSubmit: handleProductSubmit,
+    control,
+    reset: resetProduct,
+    formState: { errors: productErrors },
+  } = useForm({
+    defaultValues: {
+      productId: "",
+      productName: "",
+      rawMaterials: []
+    },
   });
 
-  const [productionForm, setProductionForm] = useState({
-    productId: "",
-    quantity: "",
-    date: new Date().toISOString().slice(0, 16),
-    status: "Pending",
+  // Add useFieldArray hook here, before any JSX
+  const { fields, append, remove } = useFieldArray({
+    control,
+    name: "rawMaterials"
   });
 
-  // Handle product form input change
-  const handleProductChange = (e) => {
-    const { name, value } = e.target;
-    setProductForm((prev) => ({ ...prev, [name]: value }));
-  };
-
-  // Handle raw material usage input per unit
-  const handleRawMaterialUsageChange = (materialId, value) => {
-    setProductForm((prev) => ({
-      ...prev,
-      rawMaterialUsage: {
-        ...prev.rawMaterialUsage,
-        [materialId]: Number(value) || 0,
-      },
-    }));
-  };
-
+  // Remove the standalone JSX block and keep it only in the return statement
   // Add a new product with raw material usage
-  const handleAddProduct = () => {
-    if (!productForm.productId || !productForm.productName || !productForm.quantityPerPacket) {
-      alert("Please enter all product details.");
-      return;
-    }
+  const onProductSubmit = (data) => {
+    const rawMaterialUsage = {};
+    data.rawMaterials.forEach(material => {
+      rawMaterialUsage[material.materialName] = Number(material.quantity);
+    });
 
     setProducts((prev) => ({
       ...prev,
-      [productForm.productId]: {
-        productName: productForm.productName,
-        rawMaterialUsage: productForm.rawMaterialUsage,
-        quantityPerPacket: Number(productForm.quantityPerPacket),
+      [data.productId]: {
+        productName: data.productName,
+        rawMaterialUsage
       },
     }));
 
     setIsProductFormOpen(false);
-    setProductForm({ productId: "", productName: "", rawMaterialUsage: {}, quantityPerPacket: "" });
+    resetProduct();
   };
 
-  // Handle production form input change
-  const handleProductionChange = (e) => {
-    const { name, value } = e.target;
-    setProductionForm((prev) => ({ ...prev, [name]: value }));
-  };
+  // Update the Product Form JSX
+  {isProductFormOpen && (
+        <div className="form-card">
+          <h3>Add New Product</h3>
+          <form onSubmit={handleProductSubmit(onProductSubmit)}>
+            <div className="section">
+              <h4>Product Details</h4>
+              <div>
+                <input
+                  {...registerProduct("productId", { required: "Product ID is required" })}
+                  placeholder="Product ID"
+                />
+                {productErrors.productId && (
+                  <span className="error">{productErrors.productId.message}</span>
+                )}
+              </div>
+
+              <div>
+                <input
+                  {...registerProduct("productName", { required: "Product Name is required" })}
+                  placeholder="Product Name"
+                />
+                {productErrors.productName && (
+                  <span className="error">{productErrors.productName.message}</span>
+                )}
+              </div>
+            </div>
+
+            {/* Rest of the form remains the same */}
+            <div className="section">
+              <h4>Raw Material Usage (per unit)</h4>
+              {fields.map((field, index) => (
+                <div key={field.id} className="raw-material-entry">
+                  <select
+                    {...registerProduct(`rawMaterials.${index}.materialName`, {
+                      required: "Material name is required"
+                    })}
+                  >
+                    <option value="">Select Raw Material</option>
+                    {Object.entries(rawMaterials).map(([id, material]) => (
+                      <option key={id} value={id}>
+                        {material.productName}
+                      </option>
+                    ))}
+                  </select>
+                  
+                  <input
+                    type="number"
+                    {...registerProduct(`rawMaterials.${index}.quantity`, {
+                      required: "Quantity is required",
+                      min: { value: 0, message: "Quantity must be positive" }
+                    })}
+                    placeholder="Quantity (kg)"
+                  />
+                  
+                  <button type="button" onClick={() => remove(index)}>Remove</button>
+                </div>
+              ))}
+
+              <button 
+                type="button" 
+                onClick={() => append({ materialName: "", quantity: "" })}
+                className="add-material-btn"
+              >
+                Add Raw Material
+              </button>
+            </div>
+
+            <div className="form-actions">
+              <button type="submit">Save Product</button>
+              <button type="button" onClick={() => setIsProductFormOpen(false)}>Close</button>
+            </div>
+          </form>
+        </div>
+      )}
+
+  // Production Form
+  const {
+    register: registerProduction,
+    handleSubmit: handleProductionSubmit,
+    reset: resetProduction,
+    formState: { errors: productionErrors },
+  } = useForm({
+    defaultValues: {
+      productId: "",
+      quantity: "",
+      date: new Date().toISOString().slice(0, 16),
+      status: "Pending",
+    },
+  });
 
   // Add a new production and update raw materials
-  const handleAddProduction = () => {
-    const { productId, quantity } = productionForm;
-    const product = products[productId];
+  const onProductionSubmit = (data) => {
+    const product = products[data.productId];
 
-    if (!product || !quantity) {
-      alert("Please select a valid product and enter quantity.");
+    if (!product) {
+      alert("Please select a valid product.");
       return;
     }
 
     let updatedRawMaterials = { ...rawMaterials };
 
+    // Calculate required materials
     for (let materialId in product.rawMaterialUsage) {
-      const requiredAmount = product.rawMaterialUsage[materialId] * quantity;
+      const requiredAmount = product.rawMaterialUsage[materialId] * data.quantity;
 
+      // Check if enough raw materials are available
       if ((updatedRawMaterials[materialId]?.quantity || 0) < requiredAmount) {
         alert(`Not enough ${updatedRawMaterials[materialId]?.productName} available.`);
         return;
       }
 
+      // Update raw material quantities
       updatedRawMaterials[materialId] = {
         ...updatedRawMaterials[materialId],
         quantity: updatedRawMaterials[materialId].quantity - requiredAmount,
       };
     }
 
+    // Update states
     setRawMaterials(updatedRawMaterials);
-    setProductions((prev) => [{ ...productionForm, status: "Pending" }, ...prev]);
+    setProductions((prev) => [{ ...data, status: "Pending" }, ...prev]);
     setIsProductionFormOpen(false);
-    setProductionForm({ productId: "", quantity: "", date: new Date().toISOString().slice(0, 16), status: "Pending" });
+    resetProduction();
   };
 
-  // Mark production as Ready
-  const updateStatus = (index) => {
-    setProductions((prev) =>
-      prev.map((prod, i) => (i === index ? { ...prod, status: "Ready" } : prod))
-    );
-  };
+  // Production Form JSX
+  {isProductionFormOpen && (
+    <div className="form-card">
+      <h3>Add Production</h3>
+      <form onSubmit={handleProductionSubmit(onProductionSubmit)}>
+        <div className="section">
+          <div>
+            <label>Select Product</label>
+            <select {...registerProduction("productId", { required: "Please select a product" })}>
+              <option value="">Choose a product</option>
+              {Object.entries(products).map(([id, product]) => (
+                <option key={id} value={id}>
+                  {product.productName}
+                </option>
+              ))}
+            </select>
+            {productionErrors.productId && (
+              <span className="error">{productionErrors.productId.message}</span>
+            )}
+          </div>
+
+          <div>
+            <label>Production Quantity</label>
+            <input 
+              type="number"
+              {...registerProduction("quantity", {
+                required: "Quantity is required",
+                min: { value: 1, message: "Quantity must be at least 1" }
+              })}
+              placeholder="Enter quantity to produce"
+            />
+            {productionErrors.quantity && (
+              <span className="error">{productionErrors.quantity.message}</span>
+            )}
+          </div>
+
+          <div>
+            <label>Production Date</label>
+            <input 
+              type="datetime-local"
+              {...registerProduction("date", { required: "Date is required" })}
+            />
+            {productionErrors.date && (
+              <span className="error">{productionErrors.date.message}</span>
+            )}
+          </div>
+        </div>
+
+        <div className="form-actions">
+          <button type="submit">Start Production</button>
+          <button type="button" onClick={() => setIsProductionFormOpen(false)}>Cancel</button>
+        </div>
+      </form>
+    </div>
+  )}
 
   return (
     <div className="container">
-      {/* Dashboard */}
+      {/* Dashboard Section */}
       <div className="stock-container">
         <h2>Total Production Stock</h2>
         <ul>
           {productions.map((prod, index) => (
             <li key={index}>
-              {prod.productName}: <span>{prod.quantity} packets</span>
+              {products[prod.productId]?.productName}: <span>{prod.quantity} {products[prod.productId]?.productionDetails?.unit || 'packets'}</span>
             </li>
           ))}
         </ul>
@@ -127,27 +255,74 @@ export default function ProductionManagement({ rawMaterials, setRawMaterials }) 
       {isProductFormOpen && (
         <div className="form-card">
           <h3>Add New Product</h3>
-          <input name="productId" value={productForm.productId} onChange={handleProductChange} placeholder="Product ID" />
-          <input name="productName" value={productForm.productName} onChange={handleProductChange} placeholder="Product Name" />
-          <input name="quantityPerPacket" type="number" value={productForm.quantityPerPacket} onChange={handleProductChange} placeholder="Quantity Per Packet" />
-
-          <h4>Raw Material Usage (per unit)</h4>
-          <div className="raw-material-usage">
-            {Object.entries(rawMaterials).map(([id, mat]) => (
-              <div key={id}>
-                <label>{mat.productName}:</label>
+          <form onSubmit={handleProductSubmit(onProductSubmit)}>
+            <div className="section">
+              <h4>Product Details</h4>
+              <div>
                 <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={productForm.rawMaterialUsage[id] || ""}
-                  onChange={(e) => handleRawMaterialUsageChange(id, e.target.value)}
+                  {...registerProduct("productId", { required: "Product ID is required" })}
+                  placeholder="Product ID"
                 />
+                {productErrors.productId && (
+                  <span className="error">{productErrors.productId.message}</span>
+                )}
               </div>
-            ))}
-          </div>
 
-          <button onClick={handleAddProduct}>Save Product</button>
+              <div>
+                <input
+                  {...registerProduct("productName", { required: "Product Name is required" })}
+                  placeholder="Product Name"
+                />
+                {productErrors.productName && (
+                  <span className="error">{productErrors.productName.message}</span>
+                )}
+              </div>
+            </div>
+
+            <div className="section">
+              <h4>Raw Material Usage (per unit)</h4>
+              {fields.map((field, index) => (
+                <div key={field.id} className="raw-material-entry">
+                  <select
+                    {...registerProduct(`rawMaterials.${index}.materialName`, {
+                      required: "Material name is required"
+                    })}
+                  >
+                    <option value="">Select Raw Material</option>
+                    {Object.entries(rawMaterials).map(([id, material]) => (
+                      <option key={id} value={id}>
+                        {material.productName}
+                      </option>
+                    ))}
+                  </select>
+                  
+                  <input
+                    type="number"
+                    {...registerProduct(`rawMaterials.${index}.quantity`, {
+                      required: "Quantity is required",
+                      min: { value: 0, message: "Quantity must be positive" }
+                    })}
+                    placeholder="Quantity (kg)"
+                  />
+                  
+                  <button type="button" onClick={() => remove(index)}>Remove</button>
+                </div>
+              ))}
+
+              <button 
+                type="button" 
+                onClick={() => append({ materialName: "", quantity: "" })}
+                className="add-material-btn"
+              >
+                Add Raw Material
+              </button>
+            </div>
+
+            <div className="form-actions">
+              <button type="submit">Save Product</button>
+              <button type="button" onClick={() => setIsProductFormOpen(false)}>Close</button>
+            </div>
+          </form>
         </div>
       )}
 
@@ -155,30 +330,46 @@ export default function ProductionManagement({ rawMaterials, setRawMaterials }) 
       {isProductionFormOpen && (
         <div className="form-card">
           <h3>Add Production</h3>
-          <select name="productId" value={productionForm.productId} onChange={handleProductionChange}>
-            <option value="">Select Product</option>
-            {Object.entries(products).map(([id, product]) => (
-              <option key={id} value={id}>{product.productName}</option>
-            ))}
-          </select>
+          <form onSubmit={handleProductionSubmit(onProductionSubmit)}>
+            <div>
+              <select {...registerProduction("productId", { required: "Please select a product" })}>
+                <option value="">Select Product</option>
+                {Object.entries(products).map(([id, product]) => (
+                  <option key={id} value={id}>{product.productName}</option>
+                ))}
+              </select>
+              {productionErrors.productId && (
+                <span className="error">{productionErrors.productId.message}</span>
+              )}
+            </div>
 
-          <input 
-            type="number" 
-            name="quantity" 
-            value={productionForm.quantity} 
-            onChange={handleProductionChange} 
-            placeholder="Enter Quantity"
-          />
+            <div>
+              <input 
+                type="number"
+                {...registerProduction("quantity", {
+                  required: "Quantity is required",
+                  min: { value: 1, message: "Quantity must be at least 1" }
+                })}
+                placeholder="Enter Quantity"
+              />
+              {productionErrors.quantity && (
+                <span className="error">{productionErrors.quantity.message}</span>
+              )}
+            </div>
 
-          <input 
-            type="datetime-local" 
-            name="date" 
-            value={productionForm.date} 
-            onChange={handleProductionChange} 
-          />
+            <div>
+              <input 
+                type="datetime-local"
+                {...registerProduction("date", { required: "Date is required" })}
+              />
+              {productionErrors.date && (
+                <span className="error">{productionErrors.date.message}</span>
+              )}
+            </div>
 
-          <button onClick={handleAddProduction}>Save Production</button>
-          <button onClick={() => setIsProductionFormOpen(false)}>Close</button>
+            <button type="submit">Save Production</button>
+            <button type="button" onClick={() => setIsProductionFormOpen(false)}>Close</button>
+          </form>
         </div>
       )}
 
@@ -197,12 +388,14 @@ export default function ProductionManagement({ rawMaterials, setRawMaterials }) 
           <tbody>
             {productions.map((prod, index) => (
               <tr key={index}>
-                <td>{prod.productName}</td>
+                <td>{products[prod.productId]?.productName}</td>
                 <td>{prod.quantity}</td>
-                <td>{prod.date}</td>
+                <td>{new Date(prod.date).toLocaleString()}</td>
                 <td>{prod.status}</td>
                 <td>
-                  {prod.status === "Pending" && <button onClick={() => updateStatus(index)}>Mark Ready</button>}
+                  {prod.status === "Pending" && (
+                    <button onClick={() => updateStatus(index)}>Mark Ready</button>
+                  )}
                 </td>
               </tr>
             ))}
@@ -212,3 +405,10 @@ export default function ProductionManagement({ rawMaterials, setRawMaterials }) 
     </div>
   );
 }
+
+// Mark production as Ready
+  const updateStatus = (index) => {
+    setProductions((prev) =>
+      prev.map((prod, i) => (i === index ? { ...prod, status: "Ready" } : prod))
+    );
+  };

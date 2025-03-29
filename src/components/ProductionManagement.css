@@ -214,3 +214,27 @@
     }
   }
   
+  .section {
+    margin-bottom: 20px;
+    padding: 15px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+  }
+  
+  .raw-material-entry {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 10px;
+    align-items: center;
+  }
+  
+  .form-actions {
+    margin-top: 20px;
+    display: flex;
+    gap: 10px;
+  }
+  
+  .add-material-btn {
+    margin-top: 10px;
+  }
+  
