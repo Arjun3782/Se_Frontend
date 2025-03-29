@@ -50,7 +50,7 @@ const Login = () => {
       return handleError("Please fill all required fields");
     }
     try {
-      const url = "http://localhost:5000/api/auth/signup";
+      const url = "http://localhost:3000/api/auth/signup";
       const response = await axios.post(url, signupInfo, {
         headers: {
           "Content-Type": "application/json",
@@ -100,7 +100,7 @@ const Login = () => {
       return handleError("Please fill all the fields");
     }
     try {
-      const url = "http://localhost:5000/api/auth/login";
+      const url = "http://localhost:3000/api/auth/login";
       const response = await axios.post(url, loginInfo, {
         headers: {
           "Content-Type": "application/json",

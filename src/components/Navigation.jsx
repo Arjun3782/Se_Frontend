@@ -2,16 +2,21 @@ import React, { useState, useEffect } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import "./Navigation.css";
 
-const Navigation = () => {
+const Navigation = React.memo(() => {  // Wrap in React.memo
   const [user, setUser] = useState(null);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
 
   useEffect(() => {
-    const userData = localStorage.getItem("user");
-    if (userData) {
-      setUser(JSON.parse(userData));
+    try {
+      const userData = localStorage.getItem("user");
+      if (userData) {
+        setUser(JSON.parse(userData));
+      }
+    } catch (error) {
+      console.error("Error parsing user data:", error);
+      localStorage.removeItem("user");
     }
   }, []);
 
@@ -74,6 +79,6 @@ const Navigation = () => {
       </div>
     </nav>
   );
-};
+});
 
 export default Navigation;

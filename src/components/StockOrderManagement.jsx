@@ -1,179 +1,422 @@
-import { useState } from "react";
+import React, { useState, useEffect } from "react";
+import axios from "axios";
+import { toast, ToastContainer } from "react-toastify";
+import "react-toastify/dist/ReactToastify.css";
 import "./StockOrderManagement.css";
 
-export default function StockOrderManagement({ finalStock, setFinalStock }) {
+const StockOrderManagement = () => {
   const [orders, setOrders] = useState([]);
-  const [buyers, setBuyers] = useState({});
-  const [isOrderFormOpen, setIsOrderFormOpen] = useState(false);
-  const [orderForm, setOrderForm] = useState({
-    buyerId: "",
-    buyerName: "",
-    buyerAddress: "",
-    buyerMobile: "",
-    productId: "",
-    productName: "",
+  const [loading, setLoading] = useState(true);
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [editingOrder, setEditingOrder] = useState(null);
+  const [rawMaterials, setRawMaterials] = useState([]);
+  const [suppliers, setSuppliers] = useState([]);
+  
+  const [formData, setFormData] = useState({
+    material_id: "",
+    supplier_id: "",
     quantity: "",
-    price: "",
-    totalPrice: "",
-    status: "Pending",
+    unit_price: "",
+    status: "pending",
+    expected_delivery: ""
   });
 
-  // Handle form input change
-  const handleOrderChange = (e) => {
+  // Fetch orders, raw materials, and suppliers on component mount
+  useEffect(() => {
+    fetchOrders();
+    fetchRawMaterials();
+    fetchSuppliers();
+  }, []);
+
+  const fetchOrders = async () => {
+    try {
+      setLoading(true);
+      // Mock data for now
+      setTimeout(() => {
+        setOrders([
+          {
+            _id: "1",
+            material: { _id: "1", name: "Cotton" },
+            supplier: { _id: "1", name: "Textile Supplies Inc." },
+            quantity: 500,
+            unit_price: 2.5,
+            total_price: 1250,
+            status: "delivered",
+            order_date: "2023-03-15",
+            expected_delivery: "2023-03-25",
+            actual_delivery: "2023-03-23"
+          },
+          {
+            _id: "2",
+            material: { _id: "2", name: "Polyester" },
+            supplier: { _id: "2", name: "Synthetic Fabrics Co." },
+            quantity: 300,
+            unit_price: 3.2,
+            total_price: 960,
+            status: "pending",
+            order_date: "2023-03-18",
+            expected_delivery: "2023-03-30",
+            actual_delivery: null
+          }
+        ]);
+        setLoading(false);
+      }, 1000);
+    } catch (error) {
+      console.error("Error fetching orders:", error);
+      toast.error("Failed to load orders");
+      setLoading(false);
+    }
+  };
+
+  const fetchRawMaterials = async () => {
+    try {
+      // Mock data for now
+      setRawMaterials([
+        { _id: "1", name: "Cotton" },
+        { _id: "2", name: "Polyester" },
+        { _id: "3", name: "Wool" }
+      ]);
+    } catch (error) {
+      console.error("Error fetching raw materials:", error);
+      toast.error("Failed to load raw materials");
+    }
+  };
+
+  const fetchSuppliers = async () => {
+    try {
+      // Mock data for now
+      setSuppliers([
+        { _id: "1", name: "Textile Supplies Inc." },
+        { _id: "2", name: "Synthetic Fabrics Co." },
+        { _id: "3", name: "Natural Fibers Ltd." }
+      ]);
+    } catch (error) {
+      console.error("Error fetching suppliers:", error);
+      toast.error("Failed to load suppliers");
+    }
+  };
+
+  const handleInputChange = (e) => {
     const { name, value } = e.target;
-    setOrderForm((prev) => {
-      let updatedForm = { ...prev, [name]: value };
-
-      // Auto-fill buyer details if ID exists
-      if (name === "buyerId" && buyers[value]) {
-        updatedForm = { ...updatedForm, ...buyers[value] };
-      }
-
-      // Auto-calculate total price
-      if (name === "quantity" || name === "price") {
-        updatedForm.totalPrice =
-          updatedForm.quantity && updatedForm.price
-            ? (Number(updatedForm.quantity) * Number(updatedForm.price)).toFixed(2)
-            : "";
-      }
-      return updatedForm;
+    setFormData({
+      ...formData,
+      [name]: value
     });
   };
 
-  // Add new order
-  const handleAddOrder = () => {
-    if (
-      !orderForm.buyerId ||
-      !orderForm.buyerName ||
-      !orderForm.buyerAddress ||
-      !orderForm.buyerMobile ||
-      !orderForm.productId ||
-      !orderForm.productName ||
-      !orderForm.quantity ||
-      !orderForm.price
-    ) {
-      alert("Please fill all order details.");
-      return;
+  const handleAddOrder = async (e) => {
+    e.preventDefault();
+    try {
+      // Calculate total price
+      const totalPrice = parseFloat(formData.quantity) * parseFloat(formData.unit_price);
+      
+      // Find the selected material and supplier objects
+      const material = rawMaterials.find(m => m._id === formData.material_id);
+      const supplier = suppliers.find(s => s._id === formData.supplier_id);
+      
+      if (!material || !supplier) {
+        toast.error("Please select valid material and supplier");
+        return;
+      }
+      
+      // Create new order object
+      const newOrder = {
+        _id: Date.now().toString(),
+        material,
+        supplier,
+        quantity: parseFloat(formData.quantity),
+        unit_price: parseFloat(formData.unit_price),
+        total_price: totalPrice,
+        status: formData.status,
+        order_date: new Date().toISOString().split('T')[0],
+        expected_delivery: formData.expected_delivery,
+        actual_delivery: null
+      };
+      
+      // Mock adding order
+      setOrders([...orders, newOrder]);
+      
+      toast.success("Order added successfully");
+      setShowAddForm(false);
+      resetForm();
+    } catch (error) {
+      console.error("Error adding order:", error);
+      toast.error("Failed to add order");
     }
+  };
 
-    if ((finalStock[orderForm.productId] || 0) < Number(orderForm.quantity)) {
-      alert(`Not enough stock for ${orderForm.productName}.`);
-      return;
+  const handleUpdateOrder = async (e) => {
+    e.preventDefault();
+    try {
+      // Calculate total price
+      const totalPrice = parseFloat(formData.quantity) * parseFloat(formData.unit_price);
+      
+      // Find the selected material and supplier objects
+      const material = rawMaterials.find(m => m._id === formData.material_id) || {};
+      const supplier = suppliers.find(s => s._id === formData.supplier_id) || {};
+      
+      // Update order
+      setOrders(orders.map(order => 
+        order._id === editingOrder ? {
+          ...order,
+          material,
+          supplier,
+          quantity: parseFloat(formData.quantity),
+          unit_price: parseFloat(formData.unit_price),
+          total_price: totalPrice,
+          status: formData.status,
+          expected_delivery: formData.expected_delivery,
+          actual_delivery: formData.status === "delivered" ? new Date().toISOString().split('T')[0] : null
+        } : order
+      ));
+      
+      toast.success("Order updated successfully");
+      setShowAddForm(false);
+      setEditingOrder(null);
+      resetForm();
+    } catch (error) {
+      console.error("Error updating order:", error);
+      toast.error("Failed to update order");
     }
+  };
 
-    setOrders([orderForm, ...orders]);
-    setBuyers((prev) => ({
-      ...prev,
-      [orderForm.buyerId]: {
-        buyerName: orderForm.buyerName,
-        buyerAddress: orderForm.buyerAddress,
-        buyerMobile: orderForm.buyerMobile,
-      },
-    }));
+  const handleEditOrder = (order) => {
+    setEditingOrder(order._id);
+    setFormData({
+      material_id: order.material?._id || "",
+      supplier_id: order.supplier?._id || "",
+      quantity: order.quantity,
+      unit_price: order.unit_price,
+      status: order.status,
+      expected_delivery: order.expected_delivery
+    });
+    setShowAddForm(true);
+  };
 
-    setFinalStock((prev) => ({
-      ...prev,
-      [orderForm.productId]: prev[orderForm.productId] - Number(orderForm.quantity),
-    }));
+  const handleDeleteOrder = async (orderId) => {
+    if (!window.confirm("Are you sure you want to delete this order?")) return;
+    
+    try {
+      // Mock deleting order
+      setOrders(orders.filter(order => order._id !== orderId));
+      
+      toast.success("Order deleted successfully");
+    } catch (error) {
+      console.error("Error deleting order:", error);
+      toast.error("Failed to delete order");
+    }
+  };
 
-    setOrderForm({
-      buyerId: "",
-      buyerName: "",
-      buyerAddress: "",
-      buyerMobile: "",
-      productId: "",
-      productName: "",
+  const resetForm = () => {
+    setFormData({
+      material_id: "",
+      supplier_id: "",
       quantity: "",
-      price: "",
-      totalPrice: "",
-      status: "Pending",
+      unit_price: "",
+      status: "pending",
+      expected_delivery: ""
     });
-    setIsOrderFormOpen(false);
   };
 
-  // Update Order Status to Ready
-  const handleMarkReady = (index) => {
-    setOrders((prev) =>
-      prev.map((order, i) => (i === index ? { ...order, status: "Ready" } : order))
-    );
+  const getStatusClass = (status) => {
+    if (!status) return "";
+    
+    switch (status.toLowerCase()) {
+      case "delivered":
+        return "status-delivered";
+      case "in transit":
+        return "status-transit";
+      case "pending":
+        return "status-pending";
+      case "cancelled":
+        return "status-cancelled";
+      default:
+        return "";
+    }
   };
 
-  // Delete Order
-  const handleDeleteOrder = (index) => {
-    setOrders(orders.filter((_, i) => i !== index));
-  };
+  if (loading) {
+    return <div className="loading">Loading orders...</div>;
+  }
 
   return (
-    <div className="container">
-      {/* Stock Overview */}
-      <div className="stock-dashboard">
-        <h2>Final Stock</h2>
-        <ul>
-          {Object.entries(finalStock).map(([id, qty]) => (
-            <li key={id}>
-              {id}: <span>{qty} packets</span>
-            </li>
-          ))}
-        </ul>
+    <div className="stock-orders-container">
+      <ToastContainer />
+      <div className="stock-orders-header">
+        <h1>Stock Order Management</h1>
+        <button 
+          className="add-order-btn"
+          onClick={() => {
+            setShowAddForm(!showAddForm);
+            if (!showAddForm) {
+              setEditingOrder(null);
+              resetForm();
+            }
+          }}
+        >
+          {showAddForm ? "Cancel" : "Add New Order"}
+        </button>
       </div>
 
-      {/* Order Buttons */}
-      <div className="buttons-container">
-        <button className="open-form-button" onClick={() => setIsOrderFormOpen(true)}>Place Order</button>
-      </div>
-
-      {/* Order Form */}
-      {isOrderFormOpen && (
-        <div className="form-card">
-          <h3>Add Order</h3>
-          <input name="buyerId" value={orderForm.buyerId} onChange={handleOrderChange} placeholder="Buyer ID" />
-          <input name="buyerName" value={orderForm.buyerName} onChange={handleOrderChange} placeholder="Buyer Name" />
-          <input name="buyerAddress" value={orderForm.buyerAddress} onChange={handleOrderChange} placeholder="Buyer Address" />
-          <input name="buyerMobile" value={orderForm.buyerMobile} onChange={handleOrderChange} placeholder="Buyer Mobile" />
-          <input name="productId" value={orderForm.productId} onChange={handleOrderChange} placeholder="Product ID" />
-          <input name="productName" value={orderForm.productName} onChange={handleOrderChange} placeholder="Product Name" />
-          <input name="quantity" type="number" value={orderForm.quantity} onChange={handleOrderChange} placeholder="Quantity" />
-          <input name="price" type="number" value={orderForm.price} onChange={handleOrderChange} placeholder="Price" />
-          <input name="totalPrice" value={orderForm.totalPrice} readOnly placeholder="Total Price" />
-          <button onClick={handleAddOrder}>Place Order</button>
-          <button onClick={() => setIsOrderFormOpen(false)}>Close</button>
+      {showAddForm && (
+        <div className="order-form-container">
+          <h2>{editingOrder ? "Edit Order" : "Add New Order"}</h2>
+          <form onSubmit={editingOrder ? handleUpdateOrder : handleAddOrder}>
+            <div className="form-group">
+              <label htmlFor="material_id">Raw Material</label>
+              <select 
+                id="material_id" 
+                name="material_id" 
+                value={formData.material_id} 
+                onChange={handleInputChange}
+                required
+              >
+                <option value="">Select Raw Material</option>
+                {rawMaterials.map(material => (
+                  <option key={material._id} value={material._id}>
+                    {material.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            
+            <div className="form-group">
+              <label htmlFor="supplier_id">Supplier</label>
+              <select 
+                id="supplier_id" 
+                name="supplier_id" 
+                value={formData.supplier_id} 
+                onChange={handleInputChange}
+                required
+              >
+                <option value="">Select Supplier</option>
+                {suppliers.map(supplier => (
+                  <option key={supplier._id} value={supplier._id}>
+                    {supplier.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            
+            <div className="form-group">
+              <label htmlFor="quantity">Quantity</label>
+              <input 
+                type="number" 
+                id="quantity" 
+                name="quantity" 
+                value={formData.quantity} 
+                onChange={handleInputChange}
+                min="1"
+                required
+              />
+            </div>
+            
+            <div className="form-group">
+              <label htmlFor="unit_price">Unit Price</label>
+              <input 
+                type="number" 
+                id="unit_price" 
+                name="unit_price" 
+                value={formData.unit_price} 
+                onChange={handleInputChange}
+                min="0.01"
+                step="0.01"
+                required
+              />
+            </div>
+            
+            <div className="form-group">
+              <label htmlFor="status">Status</label>
+              <select 
+                id="status" 
+                name="status" 
+                value={formData.status} 
+                onChange={handleInputChange}
+                required
+              >
+                <option value="pending">Pending</option>
+                <option value="in transit">In Transit</option>
+                <option value="delivered">Delivered</option>
+                <option value="cancelled">Cancelled</option>
+              </select>
+            </div>
+            
+            <div className="form-group">
+              <label htmlFor="expected_delivery">Expected Delivery Date</label>
+              <input 
+                type="date" 
+                id="expected_delivery" 
+                name="expected_delivery" 
+                value={formData.expected_delivery} 
+                onChange={handleInputChange}
+                required
+              />
+            </div>
+            
+            <button type="submit" className="submit-btn">
+              {editingOrder ? "Update Order" : "Add Order"}
+            </button>
+          </form>
         </div>
       )}
 
-      {/* Orders Table */}
-      <div className="table-container">
+      <div className="orders-list">
         <table>
           <thead>
             <tr>
-              <th>Buyer Name</th>
-              <th>Product</th>
+              <th>Material</th>
+              <th>Supplier</th>
               <th>Quantity</th>
-              <th>Price</th>
-              <th>Total</th>
+              <th>Unit Price</th>
+              <th>Total Price</th>
               <th>Status</th>
+              <th>Order Date</th>
+              <th>Expected Delivery</th>
               <th>Actions</th>
             </tr>
           </thead>
           <tbody>
-            {orders.map((order, index) => (
-              <tr key={index}>
-                <td>{order.buyerName}</td>
-                <td>{order.productName}</td>
-                <td>{order.quantity}</td>
-                <td>{order.price}</td>
-                <td>{order.totalPrice}</td>
-                <td>{order.status}</td>
-                <td>
-                  {order.status === "Pending" && (
-                    <button onClick={() => handleMarkReady(index)}>Mark Ready</button>
-                  )}
-                  <button onClick={() => handleDeleteOrder(index)}>Delete</button>
-                </td>
+            {orders.length > 0 ? (
+              orders.map(order => (
+                <tr key={order._id}>
+                  <td>{order.material?.name || "N/A"}</td>
+                  <td>{order.supplier?.name || "N/A"}</td>
+                  <td>{order.quantity}</td>
+                  <td>${order.unit_price.toFixed(2)}</td>
+                  <td>${order.total_price.toFixed(2)}</td>
+                  <td>
+                    <span className={`status-badge ${getStatusClass(order.status)}`}>
+                      {order.status}
+                    </span>
+                  </td>
+                  <td>{order.order_date}</td>
+                  <td>{order.expected_delivery}</td>
+                  <td className="actions">
+                    <button 
+                      className="edit-btn"
+                      onClick={() => handleEditOrder(order)}
+                    >
+                      Edit
+                    </button>
+                    <button 
+                      className="delete-btn"
+                      onClick={() => handleDeleteOrder(order._id)}
+                    >
+                      Delete
+                    </button>
+                  </td>
+                </tr>
+              ))
+            ) : (
+              <tr>
+                <td colSpan="9" className="no-data">No orders found</td>
               </tr>
-            ))}
+            )}
           </tbody>
         </table>
       </div>
     </div>
   );
-}
+};
+
+export default StockOrderManagement;

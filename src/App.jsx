@@ -1,6 +1,6 @@
 import React from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
-import Navbar from "./components/Navbar"; // Changed from Navigation to Navbar
+import Navbar from "./components/Navbar"; // This imports Navbar
 import Login from "./components/Login";
 import Dashboard from "./components/Dashboard"; 
 import RawMaterials from "./components/RawMaterialManagement";
@@ -39,7 +39,7 @@ const App = () => {
           <Route path="/" element={
             <ProtectedRoute>
               <div className="main-container">
-                <Navigation />
+                <Navbar /> {/* Changed from Navigation to Navbar */}
                 <div className="content">
                   <Dashboard />
                 </div>
@@ -50,7 +50,7 @@ const App = () => {
           <Route path="/dashboard" element={
             <ProtectedRoute>
               <div className="main-container">
-                <Navigation />
+                <Navbar /> {/* Changed from Navigation to Navbar */}
                 <div className="content">
                   <Dashboard />
                 </div>
@@ -61,7 +61,7 @@ const App = () => {
           <Route path="/raw-materials" element={
             <ProtectedRoute>
               <div className="main-container">
-                <Navigation />
+                <Navbar /> {/* Changed from Navigation to Navbar */}
                 <div className="content">
                   <RawMaterials />
                 </div>
@@ -72,7 +72,7 @@ const App = () => {
           <Route path="/production" element={
             <ProtectedRoute>
               <div className="main-container">
-                <Navigation />
+                <Navbar /> {/* Changed from Navigation to Navbar */}
                 <div className="content">
                   <Production />
                 </div>
@@ -83,7 +83,7 @@ const App = () => {
           <Route path="/stock-orders" element={
             <ProtectedRoute>
               <div className="main-container">
-                <Navigation />
+                <Navbar /> {/* Changed from Navigation to Navbar */}
                 <div className="content">
                   <StockOrder />
                 </div>
@@ -94,7 +94,7 @@ const App = () => {
           <Route path="/users" element={
             <ProtectedRoute allowedRoles={["admin"]}>
               <div className="main-container">
-                <Navigation />
+                <Navbar /> {/* Changed from Navigation to Navbar */}
                 <div className="content">
                   <Users />
                 </div>
