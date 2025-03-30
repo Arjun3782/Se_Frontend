@@ -1,6 +1,9 @@
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
 import axios from "axios";
 
+// Only import refreshToken
+import { refreshToken } from '../utils/authUtils';
+
 const initialState = {
   rawMaterial: [],
   products: [],
@@ -93,10 +96,12 @@ export const deleteRawMaterial = createAsyncThunk(
   }
 );
 
+// In your updateRawMaterial function
 export const updateRawMaterial = createAsyncThunk(
   "material/updateRawMaterial",
-  async (data, { rejectWithValue }) => {
+  async (materialData, { rejectWithValue, dispatch }) => {
     try {
+      // Get the latest token from localStorage
       const token = localStorage.getItem("token");
       const authToken = token ? (token.startsWith('Bearer ') ? token : `Bearer ${token}`) : '';
       
@@ -104,44 +109,60 @@ export const updateRawMaterial = createAsyncThunk(
         return rejectWithValue({ message: "Authentication token missing" });
       }
       
-      // Add companyId to the data being sent if it's not already there
-      const dataWithCompany = {
-        ...data,
-        companyId: data.companyId || "64f9c51e5644c2a2f9de6d4b" // Use the same hardcoded ID
-      };
-      
       const response = await axios.put(
-        `http://localhost:3000/api/rawMaterial/updateRawMaterial/${data._id}`,
-        dataWithCompany,
+        `http://localhost:3000/api/rawMaterial/updateRawMaterial/${materialData._id}`,
+        materialData,
         {
-          headers: { 
-            Authorization: authToken,
-            'Content-Type': 'application/json'
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": authToken
           }
         }
       );
       return response.data;
     } catch (error) {
-      if (error.response?.status === 401) {
-        localStorage.removeItem("token");
+      // If token is expired, try to refresh it
+      if (error.response && error.response.status === 401) {
+        try {
+          // Try to refresh the token
+          const refreshed = await refreshToken();
+          
+          if (refreshed) {
+            // Get the new token
+            const newToken = localStorage.getItem("token");
+            const newAuthToken = newToken ? (newToken.startsWith('Bearer ') ? newToken : `Bearer ${newToken}`) : '';
+            
+            // Retry the request with the new token
+            const response = await axios.put(
+              `http://localhost:3000/api/rawMaterial/updateRawMaterial/${materialData._id}`,
+              materialData,
+              {
+                headers: {
+                  "Content-Type": "application/json",
+                  "Authorization": newAuthToken
+                }
+              }
+            );
+            return response.data;
+          }
+        } catch (refreshError) {
+          console.error("Error refreshing token:", refreshError);
+          // If refresh fails, redirect to login
+          window.location.href = "/login";
+        }
       }
+      
       return rejectWithValue(error.response?.data || { message: error.message });
     }
   }
 );
 
+// In your fetchRawMaterial thunk
 export const fetchRawMaterial = createAsyncThunk(
   "material/fetchRawMaterial",
   async (_, { rejectWithValue }) => {
     try {
       const token = localStorage.getItem("token");
-      
-      // Get user data to check company ID
-      const userData = JSON.parse(localStorage.getItem("user") || "{}");
-      console.log("User data for API request:", {
-        userId: userData.id,
-        companyId: userData.companyId || userData.company_id
-      });
       
       if (!token) {
         console.error("No authentication token found");
@@ -149,11 +170,9 @@ export const fetchRawMaterial = createAsyncThunk(
       }
       
       // Make sure we're sending the token in the correct format
-      // The server seems to expect the raw token without Bearer prefix
-      const authToken = token.startsWith('Bearer ') ? token.substring(7) : token;
+      const authToken = token.startsWith('Bearer ') ? token : `Bearer ${token}`;
       
-      console.log("Making request to get raw materials");
-      
+      console.log("Fetching raw materials with token");
       const response = await axios.get(
         "http://localhost:3000/api/rawMaterial/getRawMaterial",
         {
@@ -164,17 +183,17 @@ export const fetchRawMaterial = createAsyncThunk(
         }
       );
       
-      console.log("Raw material response:", response.data);
-      
-      // If r_data is empty, log a warning
-      if (response.data && Array.isArray(response.data.r_data) && response.data.r_data.length === 0) {
-        console.warn("Server returned empty r_data array. This might indicate no materials exist for this company.");
-      }
-      
+      console.log("Raw materials fetched successfully");
       return response.data;
     } catch (error) {
       console.error("Error fetching raw materials:", error);
-      return rejectWithValue(error.response?.data || { message: error.message });
+      
+      // Don't include authentication error logic here
+      // Just return the error for the component to handle
+      return rejectWithValue(error.response?.data || { 
+        message: error.message,
+        status: error.response?.status
+      });
     }
   }
 );

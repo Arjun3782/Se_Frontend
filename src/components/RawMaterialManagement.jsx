@@ -18,6 +18,7 @@ const selectRawMaterials = createSelector(
 );
 
 const selectLoading = state => state.material.loading;
+const selectError = state => state.material.error;
 
 export default function RawMaterialManagement() {
   const dispatch = useDispatch();
@@ -25,9 +26,37 @@ export default function RawMaterialManagement() {
   // Use memoized selectors
   const rawMaterial = useSelector(selectRawMaterials);
   const loading = useSelector(selectLoading);
+  const error = useSelector(selectError);
 
+  // Add error handling for authentication issues
+  // Modify this error handling effect
   useEffect(() => {
-    dispatch(fetchRawMaterial());
+    if (error && (error.message === "Authentication token missing" || error.status === 401)) {
+      console.log("Authentication error detected:", error);
+      // Only redirect if it's a clear authentication error
+      if (error.response?.status === 401 || error.message === "Authentication token missing") {
+        window.location.href = '/login';
+      }
+    }
+  }, [error]);
+  
+  // Modify the initial data fetching effect
+  useEffect(() => {
+    // Check if token exists before fetching
+    const token = localStorage.getItem('token');
+    if (token) {
+      console.log("Token found, fetching raw materials");
+      dispatch(fetchRawMaterial())
+        .unwrap()
+        .catch(error => {
+          console.error("Error fetching raw materials:", error);
+          // Don't redirect here, let the error effect handle it
+        });
+    } else {
+      // Redirect to login if no token
+      console.log("No token found, redirecting to login");
+      window.location.href = '/login';
+    }
   }, [dispatch]);
 
   const {
@@ -64,7 +93,6 @@ export default function RawMaterialManagement() {
   }, [watchQuantity, watchPrice, setValue]);
 
   // State declarations
-  const [materials, setMaterials] = useState([]);
   const [sellers, setSellers] = useState(() => {
     const savedSellers = localStorage.getItem('sellers');
     return savedSellers ? JSON.parse(savedSellers) : {};
@@ -76,7 +104,7 @@ export default function RawMaterialManagement() {
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
   const [updateIndex, setUpdateIndex] = useState(null);
-  const [searchDate, setSearchDate] = useState(""); // Add this line
+  const [searchDate, setSearchDate] = useState(""); 
 
   // Save to localStorage when sellers or products change
   useEffect(() => {
@@ -134,13 +162,17 @@ export default function RawMaterialManagement() {
       }
     }
   };
-
-  // Update onSubmit to save new data to localStorage
-  // Remove this line as it's not needed
-  // const [materials, setMaterials] = useState([]);
   
   // Update onSubmit function
   const onSubmit = (data) => {
+    // Make sure we have a valid token before submitting
+    const token = localStorage.getItem('token');
+    if (!token) {
+      console.error("No authentication token found");
+      window.location.href = '/login';
+      return;
+    }
+
     const newMaterial = {
       s_id: data.sellerId,
       s_name: data.sellerName,
@@ -167,6 +199,9 @@ export default function RawMaterialManagement() {
         })
         .catch((error) => {
           console.error("Failed to update material:", error);
+          if (error.message === "Authentication token missing" || error.status === 401) {
+            window.location.href = '/login';
+          }
         });
     } else {
       dispatch(addRawMaterial(newMaterial))
@@ -180,6 +215,9 @@ export default function RawMaterialManagement() {
         })
         .catch((error) => {
           console.error("Failed to add material:", error);
+          if (error.message === "Authentication token missing" || error.status === 401) {
+            window.location.href = '/login';
+          }
         });
     }
 
@@ -213,6 +251,14 @@ export default function RawMaterialManagement() {
 
   // Handle delete
   const handleDelete = (id) => {
+    // Check for token before deleting
+    const token = localStorage.getItem('token');
+    if (!token) {
+      console.error("No authentication token found");
+      window.location.href = '/login';
+      return;
+    }
+
     dispatch(deleteRawMaterial(id))
       .unwrap()
       .then(() => {
@@ -221,24 +267,31 @@ export default function RawMaterialManagement() {
       })
       .catch((error) => {
         console.error("Failed to delete material:", error);
+        if (error.message === "Authentication token missing" || error.status === 401) {
+          window.location.href = '/login';
+        }
       });
   };
-
-  // Filter materials by date
-  // Add this debugging line
-  console.log("Raw Material Data:", rawMaterial);
   
-  // Modify the filtering logic
+  // Fix date filtering logic
   const filteredMaterials = searchDate
     ? rawMaterial.filter((mat) => {
-        // Convert both dates to YYYY-MM-DD format for comparison
-        const itemDate = new Date(mat.date).toISOString().split('T')[0];
-        console.log(`Comparing: ${itemDate} with search date: ${searchDate}`);
-        return itemDate === searchDate;
+        if (!mat.date) return false;
+        
+        try {
+          // Convert both dates to YYYY-MM-DD format for comparison
+          const matDate = new Date(mat.date);
+          if (isNaN(matDate.getTime())) return false;
+          
+          const itemDate = matDate.toISOString().split('T')[0];
+          return itemDate === searchDate;
+        } catch (error) {
+          console.error("Date parsing error:", error);
+          return false;
+        }
       })
     : rawMaterial;
   
-  console.log("Filtered Materials:", filteredMaterials);
   // Calculate total stock
   const totalStock = rawMaterial.reduce((acc, mat) => {
     const productName = mat.p_name;
@@ -252,6 +305,7 @@ export default function RawMaterialManagement() {
     return acc;
   }, {});
 
+  // Rest of the component remains the same
   return (
     <>
       <div className="container">
@@ -432,6 +486,8 @@ export default function RawMaterialManagement() {
         <div className="container">
           {loading ? (
             <div>Loading...</div>
+          ) : error ? (
+            <div className="error-message">Error loading data: {error.message}</div>
           ) : (
             <table>
               <thead>
@@ -449,47 +505,53 @@ export default function RawMaterialManagement() {
                 </tr>
               </thead>
               <tbody>
-                {filteredMaterials.map((mat) => (
-                  <tr key={mat._id}>
-                    <td>{mat.s_id}</td>
-                    <td>{mat.s_name}</td>
-                    <td>{mat.ph_no}</td>
-                    <td>{mat.p_id}</td>
-                    <td>{mat.p_name}</td>
-                    <td>{mat.quantity}</td>
-                    <td>{mat.price}</td>
-                    <td>{mat.total_price}</td>
-                    <td>{new Date(mat.date).toLocaleString()}</td>
-                    <td className="edt-btn">
-                      <button
-                        className="edit-btn"
-                        onClick={() =>
-                          handleEdit({
-                            sellerId: mat.s_id,
-                            sellerName: mat.s_name,
-                            sellerMobile: mat.ph_no,
-                            sellerAddress: mat.address,
-                            productId: mat.p_id,
-                            productName: mat.p_name,
-                            quantity: mat.quantity,
-                            price: mat.price,
-                            totalPrice: mat.total_price,
-                            date: mat.date,
-                            _id: mat._id,
-                          })
-                        }
-                      >
-                        Edit
-                      </button>
-                      <button
-                        className="delete-btn"
-                        onClick={() => handleDelete(mat._id)}
-                      >
-                        Delete
-                      </button>
-                    </td>
+                {filteredMaterials.length > 0 ? (
+                  filteredMaterials.map((mat) => (
+                    <tr key={mat._id}>
+                      <td>{mat.s_id}</td>
+                      <td>{mat.s_name}</td>
+                      <td>{mat.ph_no}</td>
+                      <td>{mat.p_id}</td>
+                      <td>{mat.p_name}</td>
+                      <td>{mat.quantity}</td>
+                      <td>{mat.price}</td>
+                      <td>{mat.total_price}</td>
+                      <td>{new Date(mat.date).toLocaleString()}</td>
+                      <td className="edt-btn">
+                        <button
+                          className="edit-btn"
+                          onClick={() =>
+                            handleEdit({
+                              sellerId: mat.s_id,
+                              sellerName: mat.s_name,
+                              sellerMobile: mat.ph_no,
+                              sellerAddress: mat.address,
+                              productId: mat.p_id,
+                              productName: mat.p_name,
+                              quantity: mat.quantity,
+                              price: mat.price,
+                              totalPrice: mat.total_price,
+                              date: mat.date,
+                              _id: mat._id,
+                            })
+                          }
+                        >
+                          Edit
+                        </button>
+                        <button
+                          className="delete-btn"
+                          onClick={() => handleDelete(mat._id)}
+                        >
+                          Delete
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan="10" className="no-data">No materials found</td>
                   </tr>
-                ))}
+                )}
               </tbody>
             </table>
           )}

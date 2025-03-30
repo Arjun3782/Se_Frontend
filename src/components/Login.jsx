@@ -57,17 +57,29 @@ const Login = () => {
           "Content-Type": "application/json",
         },
       });
-      const result = response.data; // Removed unnecessary await
-      const { message, success, error } = result;
-      if (success) {
-        handleSuccess(message);
+      const result = response.data;
+      if (result.success) {
+        handleSuccess(result.message);
+        
+        // Store token and user data after successful signup
+        localStorage.setItem("token", result.accessToken);
+        localStorage.setItem("user", JSON.stringify({
+          id: result.user.id,
+          name: result.user.name,
+          email: result.user.email,
+          role: result.user.role,
+          company_name: result.user.company_name,
+          companyId: result.user.companyId,
+          phone: result.user.phone || ""
+        }));
+        
         setTimeout(() => {
-          setIsLogin(true); // Switch to login form after successful signup
+          navigate("/dashboard"); // Navigate directly to dashboard after signup
         }, 3000);
-      } else if (error && response.data.details) {
+      } else if (result.error && response.data.details) {
         return handleError(response.data.details.message);
       } else {
-        return handleError(message);
+        return handleError(result.message);
       }
     } catch (error) {
       if (error.response && error.response.status === 409) {
