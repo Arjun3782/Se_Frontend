@@ -1,355 +1,743 @@
-import { useState, useEffect } from "react";
-import { useForm, useFieldArray } from "react-hook-form";
+import { useEffect, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
-import { 
-  addProduct, 
-  fetchProducts, 
-  addProduction, 
-  fetchProductions,
-  updateRawMaterial 
-} from "../features/materialSlice";
+import { fetchRawMaterial } from "../features/materialSlice";
+import { useForm } from "react-hook-form";
+import axios from "axios";
 import "./ProductionManagement.css";
 
 export default function ProductionManagement() {
   const dispatch = useDispatch();
-  const { rawMaterial, products, productions, loading } = useSelector((state) => state.material);
-  const [isProductFormOpen, setIsProductFormOpen] = useState(false);
-  const [isProductionFormOpen, setIsProductionFormOpen] = useState(false);
+  
+  // Get raw materials from the existing materialSlice
+  const rawMaterials = useSelector(state => state.material.rawMaterial || []);
+  const materialLoading = useSelector(state => state.material.loading);
+  const materialError = useSelector(state => state.material.error);
+  
+  // Local state for productions
+  const [productions, setProductions] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
 
+  // Add error handling for authentication issues
   useEffect(() => {
-    dispatch(fetchProducts());
-    dispatch(fetchProductions());
-  }, [dispatch]);
+    if (materialError && materialError.message === "Authentication token missing") {
+      console.log("Authentication error detected, redirecting to login");
+      window.location.href = '/login';
+    }
+  }, [materialError]);
 
-  // Product Form
-  const {
-    register: registerProduct,
-    handleSubmit: handleProductSubmit,
-    control,
-    reset: resetProduct,
-    formState: { errors: productErrors },
-  } = useForm({
-    defaultValues: {
-      productId: "",
-      productName: "",
-      rawMaterials: []
-    },
-  });
-
-  // Add useFieldArray hook here, before any JSX
-  const { fields, append, remove } = useFieldArray({
-    control,
-    name: "rawMaterials"
-  });
-
-  // Add a new product with raw material usage
-  const onProductSubmit = (data) => {
-    const rawMaterialUsage = {};
-    data.rawMaterials.forEach(material => {
-      rawMaterialUsage[material.materialName] = Number(material.quantity);
-    });
-
-    const productData = {
-      productId: data.productId,
-      productName: data.productName,
-      rawMaterialUsage
-    };
-
-    dispatch(addProduct(productData))
-      .unwrap()
-      .then(() => {
-        setIsProductFormOpen(false);
-        resetProduct();
-      })
-      .catch(error => {
-        console.error("Failed to add product:", error);
-      });
+  // Fetch productions and raw materials
+  const fetchProductions = async () => {
+    setLoading(true);
+    try {
+      const response = await axios.get("http://localhost:3000/api/production/getProductions");
+      setProductions(response.data.data || []);
+      setError(null);
+    } catch (err) {
+      console.error("Error fetching productions:", err.response?.data || err.message);
+      setError(err.response?.data || { error: err.message });
+      if (err.response?.status === 401) {
+        window.location.href = '/login';
+      }
+    } finally {
+      setLoading(false);
+    }
   };
 
-  // Production Form
+  useEffect(() => {
+    // Check if token exists before fetching
+    const token = localStorage.getItem('token');
+    if (token) {
+      fetchProductions();
+      dispatch(fetchRawMaterial());
+    } else {
+      // Redirect to login if no token
+      window.location.href = '/login';
+    }
+  }, [dispatch]);
+
   const {
-    register: registerProduction,
-    handleSubmit: handleProductionSubmit,
-    reset: resetProduction,
-    formState: { errors: productionErrors },
+    register,
+    handleSubmit,
+    setValue,
+    watch,
+    reset,
+    formState: { errors },
   } = useForm({
     defaultValues: {
-      productId: "",
-      quantity: "",
-      date: new Date().toISOString().slice(0, 16),
-      status: "Pending",
+      productionId: "",
+      productionName: "",
+      startDate: new Date().toISOString().slice(0, 16),
+      // endDate removed
+      status: "Planned",
+      materials: [],
+      outputProduct: {
+        productId: "",
+        productName: "",
+        quantity: "",
+        unitCost: "",
+        totalCost: "",
+      },
+      notes: "",
     },
   });
 
-  // Add a new production and update raw materials
-  const onProductionSubmit = (data) => {
-    const product = products.find(p => p._id === data.productId);
+  // State declarations
+  const [isFormOpen, setIsFormOpen] = useState(false);
+  const [isUpdating, setIsUpdating] = useState(false);
+  const [updateId, setUpdateId] = useState(null);
+  const [searchDate, setSearchDate] = useState("");
+  const [selectedMaterials, setSelectedMaterials] = useState([]);
+  const [availableMaterials, setAvailableMaterials] = useState([]);
 
-    if (!product) {
-      alert("Please select a valid product.");
+  // Watch for changes in materials and output quantity
+  const watchMaterials = watch("materials");
+  const watchOutputQuantity = watch("outputProduct.quantity");
+
+  // Update available materials when raw materials change
+  useEffect(() => {
+    if (rawMaterials.length > 0) {
+      // Group materials by product ID
+      const groupedMaterials = rawMaterials.reduce((acc, material) => {
+        if (!acc[material.p_id]) {
+          acc[material.p_id] = {
+            p_id: material.p_id,
+            p_name: material.p_name,
+            totalQuantity: 0,
+            materials: []
+          };
+        }
+        acc[material.p_id].totalQuantity += material.quantity;
+        acc[material.p_id].materials.push(material);
+        return acc;
+      }, {});
+      
+      setAvailableMaterials(Object.values(groupedMaterials));
+    }
+  }, [rawMaterials]);
+
+  // Calculate total cost when materials change
+  useEffect(() => {
+    if (selectedMaterials.length > 0 && watchOutputQuantity) {
+      const totalMaterialCost = selectedMaterials.reduce(
+        (sum, material) => sum + (material.quantityUsed * material.price), 0
+      );
+      
+      const unitCost = totalMaterialCost / watchOutputQuantity;
+      setValue("outputProduct.unitCost", unitCost.toFixed(2));
+      setValue("outputProduct.totalCost", totalMaterialCost.toFixed(2));
+    }
+  }, [selectedMaterials, watchOutputQuantity, setValue]);
+
+  // Handle adding a material to the production
+  const handleAddMaterial = (materialGroup) => {
+    const dialog = document.createElement("dialog");
+    dialog.className = "material-dialog";
+    
+    const content = document.createElement("div");
+    content.innerHTML = `
+      <h3>Select ${materialGroup.p_name} Quantity</h3>
+      <p>Available: ${materialGroup.totalQuantity}</p>
+      <input type="number" id="quantity-input" min="0.1" max="${materialGroup.totalQuantity}" step="0.1" value="1">
+      <div class="dialog-buttons">
+        <button id="cancel-btn">Cancel</button>
+        <button id="add-btn">Add</button>
+      </div>
+    `;
+    
+    dialog.appendChild(content);
+    document.body.appendChild(dialog);
+    dialog.showModal();
+    
+    document.getElementById("cancel-btn").addEventListener("click", () => {
+      dialog.close();
+      document.body.removeChild(dialog);
+    });
+    
+    document.getElementById("add-btn").addEventListener("click", () => {
+      const quantityInput = document.getElementById("quantity-input");
+      const quantity = parseFloat(quantityInput.value);
+      
+      if (quantity > 0 && quantity <= materialGroup.totalQuantity) {
+        // Find materials to use (starting with the oldest)
+        let remainingQuantity = quantity;
+        const materialsToUse = [];
+        
+        // Sort materials by date (oldest first)
+        const sortedMaterials = [...materialGroup.materials].sort(
+          (a, b) => new Date(a.date) - new Date(b.date)
+        );
+        
+        for (const material of sortedMaterials) {
+          if (remainingQuantity <= 0) break;
+          
+          const quantityToUse = Math.min(remainingQuantity, material.quantity);
+          materialsToUse.push({
+            materialId: material._id,
+            p_id: material.p_id,
+            p_name: material.p_name,
+            quantityUsed: quantityToUse,
+            price: material.price
+          });
+          
+          remainingQuantity -= quantityToUse;
+        }
+        
+        // Add to selected materials
+        setSelectedMaterials(prev => [...prev, ...materialsToUse]);
+        
+        // Update form value
+        const currentMaterials = watch("materials") || [];
+        setValue("materials", [...currentMaterials, ...materialsToUse]);
+      }
+      
+      dialog.close();
+      document.body.removeChild(dialog);
+    });
+  };
+
+  // Handle removing a material from the production
+  const handleRemoveMaterial = (index) => {
+    const updatedMaterials = [...selectedMaterials];
+    updatedMaterials.splice(index, 1);
+    setSelectedMaterials(updatedMaterials);
+    setValue("materials", updatedMaterials);
+  };
+  
+  // Add production function
+  const addProduction = async (productionData) => {
+    setLoading(true);
+    try {
+      const response = await axios.post(
+        "http://localhost:3000/api/production/addProduction",
+        productionData
+      );
+      setProductions(prev => [...prev, response.data.data]);
+      setError(null);
+      return response.data;
+    } catch (err) {
+      console.error("Error adding production:", err.response?.data || err.message);
+      setError(err.response?.data || { error: err.message });
+      if (err.response?.status === 401) {
+        window.location.href = '/login';
+      }
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  // Update production function
+  const updateProductionById = async (id, productionData) => {
+    setLoading(true);
+    try {
+      const response = await axios.put(
+        `http://localhost:3000/api/production/updateProduction/${id}`,
+        productionData
+      );
+      setProductions(prev => 
+        prev.map(prod => prod._id === id ? response.data.data : prod)
+      );
+      setError(null);
+      return response.data;
+    } catch (err) {
+      console.error("Error updating production:", err.response?.data || err.message);
+      setError(err.response?.data || { error: err.message });
+      if (err.response?.status === 401) {
+        window.location.href = '/login';
+      }
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  // Delete production function
+  const deleteProductionById = async (id) => {
+    setLoading(true);
+    try {
+      await axios.delete(`http://localhost:3000/api/production/deleteProduction/${id}`);
+      setProductions(prev => prev.filter(prod => prod._id !== id));
+      setError(null);
+    } catch (err) {
+      console.error("Error deleting production:", err.response?.data || err.message);
+      setError(err.response?.data || { error: err.message });
+      if (err.response?.status === 401) {
+        window.location.href = '/login';
+      }
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  // Update onSubmit function
+  const onSubmit = async (data) => {
+    // Make sure we have a valid token before submitting
+    const token = localStorage.getItem('token');
+    if (!token) {
+      console.error("No authentication token found");
+      window.location.href = '/login';
       return;
     }
 
-    // Check if enough raw materials are available
-    let canProduce = true;
-    const materialsToUpdate = [];
+    // Ensure we have the company ID
+    const user = JSON.parse(localStorage.getItem('user') || '{}');
+    const companyId = user.companyId;
+    
+    if (!companyId) {
+      console.error("No company ID found");
+      return;
+    }
+    
+    // Prepare the production data
+    const productionData = {
+      ...data,
+      companyId
+    };
 
-    for (let materialId in product.rawMaterialUsage) {
-      const requiredAmount = product.rawMaterialUsage[materialId] * data.quantity;
-      const material = rawMaterial.find(m => m._id === materialId);
-      
-      if (!material || material.quantity < requiredAmount) {
-        alert(`Not enough ${material ? material.productName : 'material'} available.`);
-        canProduce = false;
-        break;
+    try {
+      if (isUpdating) {
+        await updateProductionById(updateId, productionData);
+        setIsUpdating(false);
+        setUpdateId(null);
+        reset();
+        setIsFormOpen(false);
+        setSelectedMaterials([]);
+        // Fetch fresh data after update
+        fetchProductions();
+        dispatch(fetchRawMaterial());
+      } else {
+        await addProduction(productionData);
+        reset();
+        setIsFormOpen(false);
+        setSelectedMaterials([]);
+        // Fetch fresh data after adding
+        fetchProductions();
+        dispatch(fetchRawMaterial());
       }
+    } catch (error) {
+      console.error("Failed to save production:", error);
+    }
+  };
 
-      materialsToUpdate.push({
-        _id: materialId,
-        quantity: material.quantity - requiredAmount
+  // Handle edit
+  const handleEdit = (production) => {
+    setSelectedMaterials(production.materials || []);
+    reset({
+      productionId: production.productionId,
+      productionName: production.productionName,
+      startDate: new Date(production.startDate).toISOString().slice(0, 16),
+      // endDate removed
+      status: production.status,
+      materials: production.materials || [],
+      outputProduct: production.outputProduct || {
+        productId: "",
+        productName: "",
+        quantity: "",
+        unitCost: "",
+        totalCost: "",
+      },
+      notes: production.notes || "",
+    });
+    setIsUpdating(true);
+    setUpdateId(production._id);
+    setIsFormOpen(true);
+  };
+
+  // Handle delete
+  const handleDelete = async (id) => {
+    // Check for token before deleting
+    const token = localStorage.getItem('token');
+    if (!token) {
+      console.error("No authentication token found");
+      window.location.href = '/login';
+      return;
+    }
+
+    if (window.confirm("Are you sure you want to delete this production?")) {
+      try {
+        await deleteProductionById(id);
+        // Fetch fresh data after successful deletion
+        fetchProductions();
+        dispatch(fetchRawMaterial());
+      } catch (error) {
+        console.error("Failed to delete production:", error);
+      }
+    }
+  };
+  
+  // Add this function to handle status change
+  const handleStatusChange = (id, currentStatus) => {
+    const statusOptions = ["Planned", "In Progress", "Completed", "Cancelled"];
+    
+    const dialog = document.createElement("dialog");
+    dialog.className = "status-dialog";
+    
+    const content = document.createElement("div");
+    content.innerHTML = `
+      <h3>Update Production Status</h3>
+      <div class="status-options">
+        ${statusOptions.map(status => `
+          <button class="status-option ${status === currentStatus ? 'active' : ''}" 
+                  data-status="${status}">
+            ${status}
+          </button>
+        `).join('')}
+      </div>
+      <div class="dialog-buttons">
+        <button id="cancel-btn">Cancel</button>
+      </div>
+    `;
+    
+    dialog.appendChild(content);
+    document.body.appendChild(dialog);
+    dialog.showModal();
+    
+    // Add event listeners for status buttons
+    const statusButtons = dialog.querySelectorAll('.status-option');
+    statusButtons.forEach(button => {
+      button.addEventListener('click', async () => {
+        const newStatus = button.getAttribute('data-status');
+        if (newStatus !== currentStatus) {
+          try {
+            // Update the production status
+            const response = await axios.put(
+              `http://localhost:3000/api/production/updateProduction/${id}`,
+              { status: newStatus }
+            );
+            
+            // Update local state
+            setProductions(prev => 
+              prev.map(prod => prod._id === id ? {...prod, status: newStatus} : prod)
+            );
+            
+            // If status is completed, set end date to now
+            if (newStatus === "Completed") {
+              await axios.put(
+                `http://localhost:3000/api/production/updateProduction/${id}`,
+                { 
+                  status: newStatus,
+                  endDate: new Date()
+                }
+              );
+            }
+            
+            // Refresh data
+            fetchProductions();
+          } catch (error) {
+            console.error("Failed to update status:", error);
+          }
+        }
+        dialog.close();
+        document.body.removeChild(dialog);
       });
-    }
-
-    if (canProduce) {
-      // Create production record
-      dispatch(addProduction({
-        productId: data.productId,
-        quantity: Number(data.quantity),
-        date: data.date,
-        status: "Pending"
-      }))
-        .unwrap()
-        .then(() => {
-          // Update raw material quantities
-          materialsToUpdate.forEach(material => {
-            dispatch(updateRawMaterial(material));
-          });
+    });
+    
+    document.getElementById("cancel-btn").addEventListener("click", () => {
+      dialog.close();
+      document.body.removeChild(dialog);
+    });
+  };
+  
+  // Filter productions by date
+  const filteredProductions = searchDate
+    ? productions.filter((prod) => {
+        if (!prod.startDate) return false;
+        
+        try {
+          // Convert both dates to YYYY-MM-DD format for comparison
+          const prodDate = new Date(prod.startDate);
+          if (isNaN(prodDate.getTime())) return false;
           
-          setIsProductionFormOpen(false);
-          resetProduction();
-        })
-        .catch(error => {
-          console.error("Failed to add production:", error);
-        });
-    }
-  };
-
-  // Mark production as Ready
-  const updateStatus = (id) => {
-    dispatch(updateProductionStatus({ id, status: "Ready" }));
-  };
-
+          const itemDate = prodDate.toISOString().split('T')[0];
+          return itemDate === searchDate;
+        } catch (error) {
+          console.error("Date parsing error:", error);
+          return false;
+        }
+      })
+    : productions;
+  
   return (
-    <div className="container">
-      {loading ? (
-        <div className="loading-spinner">Loading...</div>
-      ) : (
-        <>
-          {/* Dashboard Section */}
-          <div className="stock-container">
-            <h2>Total Production Stock</h2>
-            {productions.length === 0 ? (
-              <p className="no-data">No production records found</p>
-            ) : (
-              <ul>
-                {productions.map((prod) => {
-                  const product = products.find(p => p._id === prod.productId);
-                  return (
-                    <li key={prod._id}>
-                      {product?.productName || 'Unknown Product'}: 
-                      <span>{prod.quantity} units</span>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
+    <>
+      <div className="container">
+        {/* Dashboard Section */}
+        <div className="dashboard">
+          <h2>Production Dashboard</h2>
+          <div className="production-overview">
+            <div className="production-card">
+              <h3>Total Productions</h3>
+              <p>{productions.length}</p>
+            </div>
+            <div className="production-card">
+              <h3>In Progress</h3>
+              <p>{productions.filter(p => p.status === 'In Progress').length}</p>
+            </div>
+            <div className="production-card">
+              <h3>Completed</h3>
+              <p>{productions.filter(p => p.status === 'Completed').length}</p>
+            </div>
           </div>
+        </div>
 
-          {/* Buttons */}
-          <div className="buttons-container">
-            <button className="open-form-button" onClick={() => setIsProductFormOpen(true)}>Add Product</button>
-            <button className="open-form-button" onClick={() => setIsProductionFormOpen(true)}>Add Production</button>
-          </div>
+        {/* Search & Add Button */}
+        <div className="actions">
+          <input
+            type="date"
+            value={searchDate}
+            onChange={(e) => setSearchDate(e.target.value)}
+          />
+          <button className="add-button" onClick={() => setIsFormOpen(true)}>
+            + Add Production
+          </button>
+        </div>
 
-          {/* Add Product Form */}
-          {isProductFormOpen && (
-            <div className="form-card">
-              <h3>Add New Product</h3>
-              <form onSubmit={handleProductSubmit(onProductSubmit)}>
-                <div className="section">
-                  <h4>Product Details</h4>
-                  <div>
+        {/* Popup Form */}
+        {isFormOpen && (
+          <div className="overlay">
+            <div className="form-popup production-form">
+              <h3>{isUpdating ? "Update Production" : "Add Production"}</h3>
+              <form onSubmit={handleSubmit(onSubmit)}>
+                <div className="form-group">
+                  <label>Production ID</label>
+                  <input
+                    type="text"
+                    {...register("productionId", { required: true })}
+                  />
+                  {errors.productionId && <span className="error">This field is required</span>}
+                </div>
+                
+                <div className="form-group">
+                  <label>Production Name</label>
+                  <input
+                    type="text"
+                    {...register("productionName", { required: true })}
+                  />
+                  {errors.productionName && <span className="error">This field is required</span>}
+                </div>
+                
+                <div className="form-row">
+                  <div className="form-group">
+                    <label>Start Date</label>
                     <input
-                      {...registerProduct("productId", { required: "Product ID is required" })}
-                      placeholder="Product ID"
+                      type="datetime-local"
+                      {...register("startDate", { required: true })}
                     />
-                    {productErrors.productId && (
-                      <span className="error">{productErrors.productId.message}</span>
-                    )}
+                    {errors.startDate && <span className="error">This field is required</span>}
                   </div>
-
-                  <div>
-                    <input
-                      {...registerProduct("productName", { required: "Product Name is required" })}
-                      placeholder="Product Name"
-                    />
-                    {productErrors.productName && (
-                      <span className="error">{productErrors.productName.message}</span>
-                    )}
+                  
+                  {/* End Date field removed */}
+                </div>
+                
+                <div className="form-group">
+                  <label>Status</label>
+                  <select {...register("status", { required: true })}>
+                    <option value="Planned">Planned</option>
+                    <option value="In Progress">In Progress</option>
+                    <option value="Completed">Completed</option>
+                    <option value="Cancelled">Cancelled</option>
+                  </select>
+                  {errors.status && <span className="error">This field is required</span>}
+                </div>
+                
+                <div className="form-group">
+                  <label>Raw Materials</label>
+                  <div className="materials-container">
+                    <div className="available-materials">
+                      <h4>Available Materials</h4>
+                      <div className="material-list">
+                        {availableMaterials.map((materialGroup) => (
+                          <div key={materialGroup.p_id} className="material-item">
+                            <div>
+                              <strong>{materialGroup.p_name}</strong>
+                              <p>Available: {materialGroup.totalQuantity}</p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleAddMaterial(materialGroup)}
+                            >
+                              Add
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    
+                    <div className="selected-materials">
+                      <h4>Selected Materials</h4>
+                      <div className="material-list">
+                        {selectedMaterials.map((material, index) => (
+                          <div key={index} className="material-item">
+                            <div>
+                              <strong>{material.p_name}</strong>
+                              <p>Quantity: {material.quantityUsed}</p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveMaterial(index)}
+                            >
+                              Remove
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
                   </div>
                 </div>
-
-                <div className="section">
-                  <h4>Raw Material Usage (per unit)</h4>
-                  {fields.map((field, index) => (
-                    <div key={field.id} className="raw-material-entry">
-                      <select
-                        {...registerProduct(`rawMaterials.${index}.materialName`, {
-                          required: "Material name is required"
-                        })}
-                      >
-                        <option value="">Select Raw Material</option>
-                        {rawMaterial.map((material) => (
-                          <option key={material._id} value={material._id}>
-                            {material.productName}
-                          </option>
-                        ))}
-                      </select>
-                      
+                
+                <div className="form-group">
+                  <label>Output Product</label>
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label>Product ID</label>
+                      <input
+                        type="text"
+                        {...register("outputProduct.productId", { required: true })}
+                      />
+                      {errors.outputProduct?.productId && <span className="error">Required</span>}
+                    </div>
+                    
+                    <div className="form-group">
+                      <label>Product Name</label>
+                      <input
+                        type="text"
+                        {...register("outputProduct.productName", { required: true })}
+                      />
+                      {errors.outputProduct?.productName && <span className="error">Required</span>}
+                    </div>
+                  </div>
+                  
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label>Quantity</label>
                       <input
                         type="number"
-                        {...registerProduct(`rawMaterials.${index}.quantity`, {
-                          required: "Quantity is required",
-                          min: { value: 0, message: "Quantity must be positive" }
-                        })}
-                        placeholder="Quantity (kg)"
+                        step="0.01"
+                        {...register("outputProduct.quantity", { required: true, min: 0.01 })}
                       />
-                      
-                      <button type="button" onClick={() => remove(index)}>Remove</button>
+                      {errors.outputProduct?.quantity && <span className="error">Required</span>}
                     </div>
-                  ))}
-
-                  <button 
-                    type="button" 
-                    onClick={() => append({ materialName: "", quantity: "" })}
-                    className="add-material-btn"
-                  >
-                    Add Raw Material
+                    
+                    <div className="form-group">
+                      <label>Unit Cost (calculated)</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        readOnly
+                        {...register("outputProduct.unitCost")}
+                      />
+                    </div>
+                    
+                    <div className="form-group">
+                      <label>Total Cost (calculated)</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        readOnly
+                        {...register("outputProduct.totalCost")}
+                      />
+                    </div>
+                  </div>
+                </div>
+                
+                <div className="form-group">
+                  <label>Notes</label>
+                  <textarea {...register("notes")}></textarea>
+                </div>
+                
+                <div className="form-actions">
+                  <button type="button" onClick={() => {
+                    setIsFormOpen(false);
+                    setIsUpdating(false);
+                    setUpdateId(null);
+                    reset();
+                    setSelectedMaterials([]);
+                  }}>
+                    Cancel
+                  </button>
+                  <button type="submit">
+                    {isUpdating ? "Update Production" : "Add Production"}
                   </button>
                 </div>
-
-                <div className="form-actions">
-                  <button type="submit">Save Product</button>
-                  <button type="button" onClick={() => setIsProductFormOpen(false)}>Close</button>
-                </div>
               </form>
             </div>
-          )}
-
-          {/* Add Production Form */}
-          {isProductionFormOpen && (
-            <div className="form-card">
-              <h3>Add Production</h3>
-              <form onSubmit={handleProductionSubmit(onProductionSubmit)}>
-                <div className="section">
-                  <div>
-                    <label>Select Product</label>
-                    <select {...registerProduction("productId", { required: "Please select a product" })}>
-                      <option value="">Choose a product</option>
-                      {products.map((product) => (
-                        <option key={product._id} value={product._id}>
-                          {product.productName}
-                        </option>
-                      ))}
-                    </select>
-                    {productionErrors.productId && (
-                      <span className="error">{productionErrors.productId.message}</span>
-                    )}
-                  </div>
-
-                  <div>
-                    <label>Production Quantity</label>
-                    <input 
-                      type="number"
-                      {...registerProduction("quantity", {
-                        required: "Quantity is required",
-                        min: { value: 1, message: "Quantity must be at least 1" }
-                      })}
-                      placeholder="Enter quantity to produce"
-                    />
-                    {productionErrors.quantity && (
-                      <span className="error">{productionErrors.quantity.message}</span>
-                    )}
-                  </div>
-
-                  <div>
-                    <label>Production Date</label>
-                    <input 
-                      type="datetime-local"
-                      {...registerProduction("date", { required: "Date is required" })}
-                    />
-                    {productionErrors.date && (
-                      <span className="error">{productionErrors.date.message}</span>
-                    )}
-                  </div>
-                </div>
-
-                <div className="form-actions">
-                  <button type="submit">Start Production</button>
-                  <button type="button" onClick={() => setIsProductionFormOpen(false)}>Cancel</button>
-                </div>
-              </form>
-            </div>
-          )}
-
-          {/* Production Table */}
-          <div className="table-container">
-            <h3>Production Records</h3>
-            {productions.length === 0 ? (
-              <p className="no-data">No production records found</p>
-            ) : (
-              <table>
-                <thead>
-                  <tr>
-                    <th>Product Name</th>
-                    <th>Quantity</th>
-                    <th>Date</th>
-                    <th>Status</th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {productions.map((prod) => {
-                    const product = products.find(p => p._id === prod.productId);
-                    return (
-                      <tr key={prod._id}>
-                        <td>{product?.productName || 'Unknown Product'}</td>
-                        <td>{prod.quantity}</td>
-                        <td>{new Date(prod.date).toLocaleString()}</td>
-                        <td>
-                          <span className={`status-${prod.status.toLowerCase()}`}>
-                            {prod.status}
-                          </span>
-                        </td>
-                        <td>
-                          {prod.status === "Pending" && (
-                            <button 
-                              className="mark-ready-button"
-                              onClick={() => updateStatus(prod._id)}
-                            >
-                              Mark Ready
-                            </button>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            )}
           </div>
-        </>
-      )}
-    </div>
+        )}
+
+        {/* Productions Table */}
+        <div className="table-container">
+          <h3>Production List</h3>
+          {loading ? (
+            <p>Loading...</p>
+          ) : error ? (
+            <p className="error-message">Error: {error.message || "Failed to load productions"}</p>
+          ) : filteredProductions.length === 0 ? (
+            <p>No productions found.</p>
+          ) : (
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Name</th>
+                  <th>Start Date</th>
+                  <th>End Date</th>
+                  <th>Status</th>
+                  <th>Output Product</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredProductions.map((production) => (
+                  <tr key={production._id}>
+                    <td>{production.productionId}</td>
+                    <td>{production.productionName}</td>
+                    <td>{new Date(production.startDate).toLocaleString()}</td>
+                    <td>{new Date(production.endDate).toLocaleString()}</td>
+                    <td className="status-column">
+                      <span 
+                        className={`status-badge ${production.status.toLowerCase().replace(' ', '-')}`}
+                      >
+                        {production.status}
+                      </span>
+                      <button
+                        className="status-button"
+                        onClick={() => handleStatusChange(production._id, production.status)}
+                      >
+                        Update Status
+                      </button>
+                    </td>
+                    <td>
+                      {production.outputProduct ? (
+                        <>
+                          <div>{production.outputProduct.productName}</div>
+                          <div>Qty: {production.outputProduct.quantity}</div>
+                        </>
+                      ) : (
+                        "N/A"
+                      )}
+                    </td>
+                    <td>
+                      <button
+                        className="edit-button"
+                        onClick={() => handleEdit(production)}
+                      >
+                        Edit
+                      </button>
+                      <button
+                        className="delete-button"
+                        onClick={() => handleDelete(production._id)}
+                      >
+                        Delete
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
+    </>
   );
 }
