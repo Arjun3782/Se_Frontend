@@ -290,9 +290,25 @@ export default function ProductionManagement() {
       return;
     }
     
+    // Check if materials have been selected
+    if (selectedMaterials.length === 0) {
+      alert("Please select at least one raw material for this production");
+      return;
+    }
+    
+    // Check if productionId already exists (for new productions)
+    if (!isUpdating) {
+      const existingProduction = productions.find(p => p.productionId === data.productionId);
+      if (existingProduction) {
+        alert(`Production ID "${data.productionId}" already exists. Please use a different ID.`);
+        return;
+      }
+    }
+    
     // Prepare the production data
     const productionData = {
       ...data,
+      materials: selectedMaterials,
       companyId
     };
 
@@ -318,6 +334,13 @@ export default function ProductionManagement() {
       }
     } catch (error) {
       console.error("Failed to save production:", error);
+      
+      // Handle duplicate key error specifically
+      if (error.response?.data?.error?.includes('duplicate key error')) {
+        alert(`Production ID "${data.productionId}" already exists. Please use a different ID.`);
+      } else {
+        alert(`Error: ${error.response?.data?.error || "Failed to save production. Please try again."}`);
+      }
     }
   };
 
@@ -692,8 +715,8 @@ export default function ProductionManagement() {
                   <tr key={production._id}>
                     <td>{production.productionId}</td>
                     <td>{production.productionName}</td>
-                    <td>{new Date(production.startDate).toLocaleString()}</td>
-                    <td>{new Date(production.endDate).toLocaleString()}</td>
+                    <td>{production.startDate ? new Date(production.startDate).toLocaleString() : 'N/A'}</td>
+                    <td>{production.endDate && !isNaN(new Date(production.endDate)) ? new Date(production.endDate).toLocaleString() : 'N/A'}</td>
                     <td className="status-column">
                       <span 
                         className={`status-badge ${production.status.toLowerCase().replace(' ', '-')}`}

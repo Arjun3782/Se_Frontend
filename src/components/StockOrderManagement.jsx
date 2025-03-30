@@ -2,421 +2,740 @@ import React, { useState, useEffect } from "react";
 import axios from "axios";
 import { toast, ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
+import { useDispatch, useSelector } from "react-redux";
+import { fetchRawMaterial } from "../features/materialSlice";
+import { useForm } from "react-hook-form";
 import "./StockOrderManagement.css";
 
-const StockOrderManagement = () => {
-  const [orders, setOrders] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [showAddForm, setShowAddForm] = useState(false);
-  const [editingOrder, setEditingOrder] = useState(null);
-  const [rawMaterials, setRawMaterials] = useState([]);
-  const [suppliers, setSuppliers] = useState([]);
+export default function StockOrderManagement() {
+  const dispatch = useDispatch();
   
-  const [formData, setFormData] = useState({
-    material_id: "",
-    supplier_id: "",
-    quantity: "",
-    unit_price: "",
-    status: "pending",
-    expected_delivery: ""
-  });
+  // Get raw materials from the existing materialSlice
+  const rawMaterials = useSelector(state => state.material.rawMaterial || []);
+  const materialLoading = useSelector(state => state.material.loading);
+  const materialError = useSelector(state => state.material.error);
+  
+  // Local state for stock orders
+  const [stockOrders, setStockOrders] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
 
-  // Fetch orders, raw materials, and suppliers on component mount
+  // Add error handling for authentication issues
   useEffect(() => {
-    fetchOrders();
-    fetchRawMaterials();
-    fetchSuppliers();
-  }, []);
+    if (materialError && materialError.message === "Authentication token missing") {
+      console.log("Authentication error detected, redirecting to login");
+      window.location.href = '/login';
+    }
+  }, [materialError]);
 
-  const fetchOrders = async () => {
+  // Fetch stock orders and raw materials
+  const fetchStockOrders = async () => {
+    setLoading(true);
     try {
-      setLoading(true);
-      // Mock data for now
-      setTimeout(() => {
-        setOrders([
-          {
-            _id: "1",
-            material: { _id: "1", name: "Cotton" },
-            supplier: { _id: "1", name: "Textile Supplies Inc." },
-            quantity: 500,
-            unit_price: 2.5,
-            total_price: 1250,
-            status: "delivered",
-            order_date: "2023-03-15",
-            expected_delivery: "2023-03-25",
-            actual_delivery: "2023-03-23"
-          },
-          {
-            _id: "2",
-            material: { _id: "2", name: "Polyester" },
-            supplier: { _id: "2", name: "Synthetic Fabrics Co." },
-            quantity: 300,
-            unit_price: 3.2,
-            total_price: 960,
-            status: "pending",
-            order_date: "2023-03-18",
-            expected_delivery: "2023-03-30",
-            actual_delivery: null
-          }
-        ]);
-        setLoading(false);
-      }, 1000);
-    } catch (error) {
-      console.error("Error fetching orders:", error);
-      toast.error("Failed to load orders");
+      const response = await axios.get("http://localhost:3000/api/stockorder/getStockOrders");
+      setStockOrders(response.data.data || []);
+      setError(null);
+    } catch (err) {
+      console.error("Error fetching stock orders:", err.response?.data || err.message);
+      setError(err.response?.data || { error: err.message });
+      if (err.response?.status === 401) {
+        window.location.href = '/login';
+      }
+    } finally {
       setLoading(false);
     }
   };
 
-  const fetchRawMaterials = async () => {
-    try {
-      // Mock data for now
-      setRawMaterials([
-        { _id: "1", name: "Cotton" },
-        { _id: "2", name: "Polyester" },
-        { _id: "3", name: "Wool" }
-      ]);
-    } catch (error) {
-      console.error("Error fetching raw materials:", error);
-      toast.error("Failed to load raw materials");
+  useEffect(() => {
+    // Check if token exists before fetching
+    const token = localStorage.getItem('token');
+    if (token) {
+      fetchStockOrders();
+      dispatch(fetchRawMaterial());
+    } else {
+      // Redirect to login if no token
+      window.location.href = '/login';
     }
-  };
+  }, [dispatch]);
 
-  const fetchSuppliers = async () => {
-    try {
-      // Mock data for now
-      setSuppliers([
-        { _id: "1", name: "Textile Supplies Inc." },
-        { _id: "2", name: "Synthetic Fabrics Co." },
-        { _id: "3", name: "Natural Fibers Ltd." }
-      ]);
-    } catch (error) {
-      console.error("Error fetching suppliers:", error);
-      toast.error("Failed to load suppliers");
+  const {
+    register,
+    handleSubmit,
+    setValue,
+    watch,
+    reset,
+    formState: { errors },
+  } = useForm({
+    defaultValues: {
+      orderNumber: "",
+      orderDate: new Date().toISOString().slice(0, 16),
+      expectedDeliveryDate: "",
+      status: "Pending",
+      supplier: {
+        name: "",
+        contactPerson: "",
+        email: "",
+        phone: ""
+      },
+      items: [],
+      totalAmount: 0,
+      notes: "",
+    },
+  });
+
+  // State declarations
+  const [isFormOpen, setIsFormOpen] = useState(false);
+  const [isUpdating, setIsUpdating] = useState(false);
+  const [updateId, setUpdateId] = useState(null);
+  const [searchDate, setSearchDate] = useState("");
+  const [selectedItems, setSelectedItems] = useState([]);
+  const [availableItems, setAvailableItems] = useState([]);
+
+  // Watch for changes in items
+  const watchItems = watch("items");
+  
+  // Update available items when raw materials change
+  useEffect(() => {
+    if (rawMaterials.length > 0) {
+      // Group materials by product ID
+      const groupedMaterials = rawMaterials.reduce((acc, material) => {
+        if (!acc[material.p_id]) {
+          acc[material.p_id] = {
+            p_id: material.p_id,
+            p_name: material.p_name,
+            price: material.price
+          };
+        }
+        return acc;
+      }, {});
+      
+      setAvailableItems(Object.values(groupedMaterials));
     }
-  };
+  }, [rawMaterials]);
 
-  const handleInputChange = (e) => {
-    const { name, value } = e.target;
-    setFormData({
-      ...formData,
-      [name]: value
+  // Calculate total amount when items change
+  useEffect(() => {
+    if (selectedItems.length > 0) {
+      const totalAmount = selectedItems.reduce(
+        (sum, item) => sum + (item.quantity * item.price), 0
+      );
+      
+      setValue("totalAmount", totalAmount.toFixed(2));
+    }
+  }, [selectedItems, setValue]);
+
+  // Handle adding an item to the order
+  const handleAddItem = (item) => {
+    const dialog = document.createElement("dialog");
+    dialog.className = "item-dialog";
+    
+    const content = document.createElement("div");
+    content.innerHTML = `
+      <h3>Add ${item.p_name} to Order</h3>
+      <div class="form-group">
+        <label>Quantity</label>
+        <input type="number" id="quantity-input" min="1" step="1" value="1">
+      </div>
+      <div class="form-group">
+        <label>Price per Unit</label>
+        <input type="number" id="price-input" min="0.01" step="0.01" value="${item.price || 0}">
+      </div>
+      <div class="dialog-buttons">
+        <button id="cancel-btn">Cancel</button>
+        <button id="add-btn">Add</button>
+      </div>
+    `;
+    
+    dialog.appendChild(content);
+    document.body.appendChild(dialog);
+    dialog.showModal();
+    
+    document.getElementById("cancel-btn").addEventListener("click", () => {
+      dialog.close();
+      document.body.removeChild(dialog);
     });
-  };
-
-  const handleAddOrder = async (e) => {
-    e.preventDefault();
-    try {
-      // Calculate total price
-      const totalPrice = parseFloat(formData.quantity) * parseFloat(formData.unit_price);
+    
+    document.getElementById("add-btn").addEventListener("click", () => {
+      const quantityInput = document.getElementById("quantity-input");
+      const priceInput = document.getElementById("price-input");
+      const quantity = parseInt(quantityInput.value);
+      const price = parseFloat(priceInput.value);
       
-      // Find the selected material and supplier objects
-      const material = rawMaterials.find(m => m._id === formData.material_id);
-      const supplier = suppliers.find(s => s._id === formData.supplier_id);
-      
-      if (!material || !supplier) {
-        toast.error("Please select valid material and supplier");
-        return;
+      if (quantity > 0 && price > 0) {
+        const newItem = {
+          p_id: item.p_id,
+          p_name: item.p_name,
+          quantity: quantity,
+          price: price,
+          total: quantity * price
+        };
+        
+        // Check if item already exists in selected items
+        const existingItemIndex = selectedItems.findIndex(i => i.p_id === item.p_id);
+        
+        if (existingItemIndex >= 0) {
+          // Update existing item
+          const updatedItems = [...selectedItems];
+          updatedItems[existingItemIndex] = {
+            ...updatedItems[existingItemIndex],
+            quantity: updatedItems[existingItemIndex].quantity + quantity,
+            total: (updatedItems[existingItemIndex].quantity + quantity) * price
+          };
+          setSelectedItems(updatedItems);
+        } else {
+          // Add new item
+          setSelectedItems(prev => [...prev, newItem]);
+        }
       }
       
-      // Create new order object
-      const newOrder = {
-        _id: Date.now().toString(),
-        material,
-        supplier,
-        quantity: parseFloat(formData.quantity),
-        unit_price: parseFloat(formData.unit_price),
-        total_price: totalPrice,
-        status: formData.status,
-        order_date: new Date().toISOString().split('T')[0],
-        expected_delivery: formData.expected_delivery,
-        actual_delivery: null
-      };
-      
-      // Mock adding order
-      setOrders([...orders, newOrder]);
-      
-      toast.success("Order added successfully");
-      setShowAddForm(false);
-      resetForm();
-    } catch (error) {
-      console.error("Error adding order:", error);
-      toast.error("Failed to add order");
-    }
+      dialog.close();
+      document.body.removeChild(dialog);
+    });
   };
 
-  const handleUpdateOrder = async (e) => {
-    e.preventDefault();
+  // Handle removing an item from the order
+  const handleRemoveItem = (index) => {
+    const updatedItems = [...selectedItems];
+    updatedItems.splice(index, 1);
+    setSelectedItems(updatedItems);
+  };
+  
+  // Add stock order function
+  const addStockOrder = async (orderData) => {
+    setLoading(true);
     try {
-      // Calculate total price
-      const totalPrice = parseFloat(formData.quantity) * parseFloat(formData.unit_price);
-      
-      // Find the selected material and supplier objects
-      const material = rawMaterials.find(m => m._id === formData.material_id) || {};
-      const supplier = suppliers.find(s => s._id === formData.supplier_id) || {};
-      
-      // Update order
-      setOrders(orders.map(order => 
-        order._id === editingOrder ? {
-          ...order,
-          material,
-          supplier,
-          quantity: parseFloat(formData.quantity),
-          unit_price: parseFloat(formData.unit_price),
-          total_price: totalPrice,
-          status: formData.status,
-          expected_delivery: formData.expected_delivery,
-          actual_delivery: formData.status === "delivered" ? new Date().toISOString().split('T')[0] : null
-        } : order
-      ));
-      
-      toast.success("Order updated successfully");
-      setShowAddForm(false);
-      setEditingOrder(null);
-      resetForm();
+      const response = await axios.post(
+        "http://localhost:3000/api/stockorder/addStockOrder",
+        orderData
+      );
+      setStockOrders(prev => [...prev, response.data.data]);
+      setError(null);
+      return response.data;
+    } catch (err) {
+      console.error("Error adding stock order:", err.response?.data || err.message);
+      setError(err.response?.data || { error: err.message });
+      if (err.response?.status === 401) {
+        window.location.href = '/login';
+      }
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  // Update stock order function
+  const updateStockOrderById = async (id, orderData) => {
+    setLoading(true);
+    try {
+      const response = await axios.put(
+        `http://localhost:3000/api/stockorder/updateStockOrder/${id}`,
+        orderData
+      );
+      setStockOrders(prev => 
+        prev.map(order => order._id === id ? response.data.data : order)
+      );
+      setError(null);
+      return response.data;
+    } catch (err) {
+      console.error("Error updating stock order:", err.response?.data || err.message);
+      setError(err.response?.data || { error: err.message });
+      if (err.response?.status === 401) {
+        window.location.href = '/login';
+      }
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  // Delete stock order function
+  const deleteStockOrderById = async (id) => {
+    setLoading(true);
+    try {
+      await axios.delete(`http://localhost:3000/api/stockorder/deleteStockOrder/${id}`);
+      setStockOrders(prev => prev.filter(order => order._id !== id));
+      setError(null);
+    } catch (err) {
+      console.error("Error deleting stock order:", err.response?.data || err.message);
+      setError(err.response?.data || { error: err.message });
+      if (err.response?.status === 401) {
+        window.location.href = '/login';
+      }
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  // Handle form submission
+  const onSubmit = async (data) => {
+    // Make sure we have a valid token before submitting
+    const token = localStorage.getItem('token');
+    if (!token) {
+      console.error("No authentication token found");
+      window.location.href = '/login';
+      return;
+    }
+
+    // Ensure we have the company ID
+    const user = JSON.parse(localStorage.getItem('user') || '{}');
+    const companyId = user.companyId;
+    
+    if (!companyId) {
+      console.error("No company ID found");
+      return;
+    }
+    
+    // Check if items have been selected
+    if (selectedItems.length === 0) {
+      alert("Please add at least one item to the order");
+      return;
+    }
+    
+    // Check if order number already exists (for new orders)
+    if (!isUpdating) {
+      const existingOrder = stockOrders.find(o => o.orderNumber === data.orderNumber);
+      if (existingOrder) {
+        alert(`Order number "${data.orderNumber}" already exists. Please use a different number.`);
+        return;
+      }
+    }
+    
+    // Prepare the order data
+    const orderData = {
+      ...data,
+      items: selectedItems,
+      companyId
+    };
+
+    try {
+      if (isUpdating) {
+        await updateStockOrderById(updateId, orderData);
+        setIsUpdating(false);
+        setUpdateId(null);
+        reset();
+        setIsFormOpen(false);
+        setSelectedItems([]);
+        // Fetch fresh data after update
+        fetchStockOrders();
+      } else {
+        await addStockOrder(orderData);
+        reset();
+        setIsFormOpen(false);
+        setSelectedItems([]);
+        // Fetch fresh data after adding
+        fetchStockOrders();
+      }
     } catch (error) {
-      console.error("Error updating order:", error);
-      toast.error("Failed to update order");
+      console.error("Failed to save stock order:", error);
+      
+      // Handle duplicate key error specifically
+      if (error.response?.data?.error?.includes('duplicate key error')) {
+        alert(`Order number "${data.orderNumber}" already exists. Please use a different number.`);
+      } else {
+        alert(`Error: ${error.response?.data?.error || "Failed to save stock order. Please try again."}`);
+      }
     }
   };
 
-  const handleEditOrder = (order) => {
-    setEditingOrder(order._id);
-    setFormData({
-      material_id: order.material?._id || "",
-      supplier_id: order.supplier?._id || "",
-      quantity: order.quantity,
-      unit_price: order.unit_price,
+  // Handle edit
+  const handleEdit = (order) => {
+    setSelectedItems(order.items || []);
+    reset({
+      orderNumber: order.orderNumber,
+      orderDate: new Date(order.orderDate).toISOString().slice(0, 16),
+      expectedDeliveryDate: order.expectedDeliveryDate ? new Date(order.expectedDeliveryDate).toISOString().slice(0, 16) : "",
       status: order.status,
-      expected_delivery: order.expected_delivery
+      supplier: order.supplier || {
+        name: "",
+        contactPerson: "",
+        email: "",
+        phone: ""
+      },
+      totalAmount: order.totalAmount,
+      notes: order.notes || "",
     });
-    setShowAddForm(true);
+    setIsUpdating(true);
+    setUpdateId(order._id);
+    setIsFormOpen(true);
   };
 
-  const handleDeleteOrder = async (orderId) => {
-    if (!window.confirm("Are you sure you want to delete this order?")) return;
-    
-    try {
-      // Mock deleting order
-      setOrders(orders.filter(order => order._id !== orderId));
-      
-      toast.success("Order deleted successfully");
-    } catch (error) {
-      console.error("Error deleting order:", error);
-      toast.error("Failed to delete order");
+  // Handle delete
+  const handleDelete = async (id) => {
+    // Check for token before deleting
+    const token = localStorage.getItem('token');
+    if (!token) {
+      console.error("No authentication token found");
+      window.location.href = '/login';
+      return;
+    }
+
+    if (window.confirm("Are you sure you want to delete this stock order?")) {
+      try {
+        await deleteStockOrderById(id);
+        // Fetch fresh data after successful deletion
+        fetchStockOrders();
+      } catch (error) {
+        console.error("Failed to delete stock order:", error);
+      }
     }
   };
-
-  const resetForm = () => {
-    setFormData({
-      material_id: "",
-      supplier_id: "",
-      quantity: "",
-      unit_price: "",
-      status: "pending",
-      expected_delivery: ""
-    });
-  };
-
-  const getStatusClass = (status) => {
-    if (!status) return "";
+  
+  // Handle status change
+  const handleStatusChange = (id, currentStatus) => {
+    const statusOptions = ["Pending", "Ordered", "Shipped", "Delivered", "Cancelled"];
     
-    switch (status.toLowerCase()) {
-      case "delivered":
-        return "status-delivered";
-      case "in transit":
-        return "status-transit";
-      case "pending":
-        return "status-pending";
-      case "cancelled":
-        return "status-cancelled";
-      default:
-        return "";
-    }
-  };
-
-  if (loading) {
-    return <div className="loading">Loading orders...</div>;
-  }
-
-  return (
-    <div className="stock-orders-container">
-      <ToastContainer />
-      <div className="stock-orders-header">
-        <h1>Stock Order Management</h1>
-        <button 
-          className="add-order-btn"
-          onClick={() => {
-            setShowAddForm(!showAddForm);
-            if (!showAddForm) {
-              setEditingOrder(null);
-              resetForm();
+    const dialog = document.createElement("dialog");
+    dialog.className = "status-dialog";
+    
+    const content = document.createElement("div");
+    content.innerHTML = `
+      <h3>Update Order Status</h3>
+      <div class="status-options">
+        ${statusOptions.map(status => `
+          <button class="status-option ${status === currentStatus ? 'active' : ''}" 
+                  data-status="${status}">
+            ${status}
+          </button>
+        `).join('')}
+      </div>
+      <div class="dialog-buttons">
+        <button id="cancel-btn">Cancel</button>
+      </div>
+    `;
+    
+    dialog.appendChild(content);
+    document.body.appendChild(dialog);
+    dialog.showModal();
+    
+    // Add event listeners for status buttons
+    const statusButtons = dialog.querySelectorAll('.status-option');
+    statusButtons.forEach(button => {
+      button.addEventListener('click', async () => {
+        const newStatus = button.getAttribute('data-status');
+        if (newStatus !== currentStatus) {
+          try {
+            // Update the order status
+            await axios.put(
+              `http://localhost:3000/api/stockorder/updateStockOrder/${id}`,
+              { status: newStatus }
+            );
+            
+            // Update local state
+            setStockOrders(prev => 
+              prev.map(order => order._id === id ? {...order, status: newStatus} : order)
+            );
+            
+            // If status is delivered, update the delivery date
+            if (newStatus === "Delivered") {
+              await axios.put(
+                `http://localhost:3000/api/stockorder/updateStockOrder/${id}`,
+                { 
+                  status: newStatus,
+                  deliveryDate: new Date()
+                }
+              );
             }
-          }}
-        >
-          {showAddForm ? "Cancel" : "Add New Order"}
-        </button>
-      </div>
-
-      {showAddForm && (
-        <div className="order-form-container">
-          <h2>{editingOrder ? "Edit Order" : "Add New Order"}</h2>
-          <form onSubmit={editingOrder ? handleUpdateOrder : handleAddOrder}>
-            <div className="form-group">
-              <label htmlFor="material_id">Raw Material</label>
-              <select 
-                id="material_id" 
-                name="material_id" 
-                value={formData.material_id} 
-                onChange={handleInputChange}
-                required
-              >
-                <option value="">Select Raw Material</option>
-                {rawMaterials.map(material => (
-                  <option key={material._id} value={material._id}>
-                    {material.name}
-                  </option>
-                ))}
-              </select>
-            </div>
             
-            <div className="form-group">
-              <label htmlFor="supplier_id">Supplier</label>
-              <select 
-                id="supplier_id" 
-                name="supplier_id" 
-                value={formData.supplier_id} 
-                onChange={handleInputChange}
-                required
-              >
-                <option value="">Select Supplier</option>
-                {suppliers.map(supplier => (
-                  <option key={supplier._id} value={supplier._id}>
-                    {supplier.name}
-                  </option>
-                ))}
-              </select>
+            // Refresh data
+            fetchStockOrders();
+          } catch (error) {
+            console.error("Failed to update status:", error);
+          }
+        }
+        dialog.close();
+        document.body.removeChild(dialog);
+      });
+    });
+    
+    document.getElementById("cancel-btn").addEventListener("click", () => {
+      dialog.close();
+      document.body.removeChild(dialog);
+    });
+  };
+  
+  // Filter stock orders by date
+  const filteredStockOrders = searchDate
+    ? stockOrders.filter((order) => {
+        if (!order.orderDate) return false;
+        
+        try {
+          // Convert both dates to YYYY-MM-DD format for comparison
+          const orderDate = new Date(order.orderDate);
+          if (isNaN(orderDate.getTime())) return false;
+          
+          const itemDate = orderDate.toISOString().split('T')[0];
+          return itemDate === searchDate;
+        } catch (error) {
+          console.error("Date parsing error:", error);
+          return false;
+        }
+      })
+    : stockOrders;
+  
+  return (
+    <>
+      <div className="container">
+        {/* Dashboard Section */}
+        <div className="dashboard">
+          <h2>Stock Order Dashboard</h2>
+          <div className="order-overview">
+            <div className="order-card">
+              <h3>Total Orders</h3>
+              <p>{stockOrders.length}</p>
             </div>
-            
-            <div className="form-group">
-              <label htmlFor="quantity">Quantity</label>
-              <input 
-                type="number" 
-                id="quantity" 
-                name="quantity" 
-                value={formData.quantity} 
-                onChange={handleInputChange}
-                min="1"
-                required
-              />
+            <div className="order-card">
+              <h3>Pending</h3>
+              <p>{stockOrders.filter(o => o.status === 'Pending').length}</p>
             </div>
-            
-            <div className="form-group">
-              <label htmlFor="unit_price">Unit Price</label>
-              <input 
-                type="number" 
-                id="unit_price" 
-                name="unit_price" 
-                value={formData.unit_price} 
-                onChange={handleInputChange}
-                min="0.01"
-                step="0.01"
-                required
-              />
+            <div className="order-card">
+              <h3>Delivered</h3>
+              <p>{stockOrders.filter(o => o.status === 'Delivered').length}</p>
             </div>
-            
-            <div className="form-group">
-              <label htmlFor="status">Status</label>
-              <select 
-                id="status" 
-                name="status" 
-                value={formData.status} 
-                onChange={handleInputChange}
-                required
-              >
-                <option value="pending">Pending</option>
-                <option value="in transit">In Transit</option>
-                <option value="delivered">Delivered</option>
-                <option value="cancelled">Cancelled</option>
-              </select>
-            </div>
-            
-            <div className="form-group">
-              <label htmlFor="expected_delivery">Expected Delivery Date</label>
-              <input 
-                type="date" 
-                id="expected_delivery" 
-                name="expected_delivery" 
-                value={formData.expected_delivery} 
-                onChange={handleInputChange}
-                required
-              />
-            </div>
-            
-            <button type="submit" className="submit-btn">
-              {editingOrder ? "Update Order" : "Add Order"}
-            </button>
-          </form>
+          </div>
         </div>
-      )}
 
-      <div className="orders-list">
-        <table>
-          <thead>
-            <tr>
-              <th>Material</th>
-              <th>Supplier</th>
-              <th>Quantity</th>
-              <th>Unit Price</th>
-              <th>Total Price</th>
-              <th>Status</th>
-              <th>Order Date</th>
-              <th>Expected Delivery</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {orders.length > 0 ? (
-              orders.map(order => (
-                <tr key={order._id}>
-                  <td>{order.material?.name || "N/A"}</td>
-                  <td>{order.supplier?.name || "N/A"}</td>
-                  <td>{order.quantity}</td>
-                  <td>${order.unit_price.toFixed(2)}</td>
-                  <td>${order.total_price.toFixed(2)}</td>
-                  <td>
-                    <span className={`status-badge ${getStatusClass(order.status)}`}>
-                      {order.status}
-                    </span>
-                  </td>
-                  <td>{order.order_date}</td>
-                  <td>{order.expected_delivery}</td>
-                  <td className="actions">
-                    <button 
-                      className="edit-btn"
-                      onClick={() => handleEditOrder(order)}
-                    >
-                      Edit
-                    </button>
-                    <button 
-                      className="delete-btn"
-                      onClick={() => handleDeleteOrder(order._id)}
-                    >
-                      Delete
-                    </button>
-                  </td>
+        {/* Search & Add Button */}
+        <div className="actions">
+          <input
+            type="date"
+            value={searchDate}
+            onChange={(e) => setSearchDate(e.target.value)}
+          />
+          <button className="add-button" onClick={() => setIsFormOpen(true)}>
+            + Add Stock Order
+          </button>
+        </div>
+
+        {/* Popup Form */}
+        {isFormOpen && (
+          <div className="overlay">
+            <div className="form-popup order-form">
+              <h3>{isUpdating ? "Update Stock Order" : "Add Stock Order"}</h3>
+              <form onSubmit={handleSubmit(onSubmit)}>
+                <div className="form-group">
+                  <label>Order Number</label>
+                  <input
+                    type="text"
+                    {...register("orderNumber", { required: true })}
+                  />
+                  {errors.orderNumber && <span className="error">This field is required</span>}
+                </div>
+                
+                <div className="form-row">
+                  <div className="form-group">
+                    <label>Order Date</label>
+                    <input
+                      type="datetime-local"
+                      {...register("orderDate", { required: true })}
+                    />
+                    {errors.orderDate && <span className="error">This field is required</span>}
+                  </div>
+                  
+                  <div className="form-group">
+                    <label>Expected Delivery Date</label>
+                    <input
+                      type="datetime-local"
+                      {...register("expectedDeliveryDate")}
+                    />
+                  </div>
+                </div>
+                
+                <div className="form-group">
+                  <label>Status</label>
+                  <select {...register("status", { required: true })}>
+                    <option value="Pending">Pending</option>
+                    <option value="Ordered">Ordered</option>
+                    <option value="Shipped">Shipped</option>
+                    <option value="Delivered">Delivered</option>
+                    <option value="Cancelled">Cancelled</option>
+                  </select>
+                  {errors.status && <span className="error">This field is required</span>}
+                </div>
+                
+                <div className="form-group">
+                  <label>Supplier Information</label>
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label>Supplier Name</label>
+                      <input
+                        type="text"
+                        {...register("supplier.name", { required: true })}
+                      />
+                      {errors.supplier?.name && <span className="error">Required</span>}
+                    </div>
+                    
+                    <div className="form-group">
+                      <label>Contact Person</label>
+                      <input
+                        type="text"
+                        {...register("supplier.contactPerson")}
+                      />
+                    </div>
+                  </div>
+                  
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label>Email</label>
+                      <input
+                        type="email"
+                        {...register("supplier.email")}
+                      />
+                    </div>
+                    
+                    <div className="form-group">
+                      <label>Phone</label>
+                      <input
+                        type="text"
+                        {...register("supplier.phone")}
+                      />
+                    </div>
+                  </div>
+                </div>
+                
+                <div className="form-group">
+                  <label>Order Items</label>
+                  <div className="items-container">
+                    <div className="available-items">
+                      <h4>Available Items</h4>
+                      <div className="item-list">
+                        {availableItems.map((item) => (
+                          <div key={item.p_id} className="item-entry">
+                            <div>
+                              <strong>{item.p_name}</strong>
+                              <p>Base Price: ${item.price}</p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleAddItem(item)}
+                            >
+                              Add
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    
+                    <div className="selected-items">
+                      <h4>Selected Items</h4>
+                      <div className="item-list">
+                        {selectedItems.map((item, index) => (
+                          <div key={index} className="item-entry">
+                            <div>
+                              <strong>{item.p_name}</strong>
+                              <p>Quantity: {item.quantity} × ${item.price} = ${item.quantity * item.price}</p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveItem(index)}
+                            >
+                              Remove
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                
+                <div className="form-group">
+                  <label>Total Amount</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    readOnly
+                    {...register("totalAmount")}
+                  />
+                </div>
+                
+                <div className="form-group">
+                  <label>Notes</label>
+                  <textarea {...register("notes")}></textarea>
+                </div>
+                
+                <div className="form-actions">
+                  <button type="button" onClick={() => {
+                    setIsFormOpen(false);
+                    setIsUpdating(false);
+                    setUpdateId(null);
+                    reset();
+                    setSelectedItems([]);
+                  }}>
+                    Cancel
+                  </button>
+                  <button type="submit">
+                    {isUpdating ? "Update Order" : "Add Order"}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* Stock Orders Table */}
+        <div className="table-container">
+          <h3>Stock Order List</h3>
+          {loading ? (
+            <p>Loading...</p>
+          ) : error ? (
+            <p className="error-message">Error: {error.message || "Failed to load stock orders"}</p>
+          ) : filteredStockOrders.length === 0 ? (
+            <p>No stock orders found.</p>
+          ) : (
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Order #</th>
+                  <th>Supplier</th>
+                  <th>Order Date</th>
+                  <th>Expected Delivery</th>
+                  <th>Status</th>
+                  <th>Total Amount</th>
+                  <th>Actions</th>
                 </tr>
-              ))
-            ) : (
-              <tr>
-                <td colSpan="9" className="no-data">No orders found</td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+              </thead>
+              <tbody>
+                {filteredStockOrders.map((order) => (
+                  <tr key={order._id}>
+                    <td>{order.orderNumber}</td>
+                    <td>{order.supplier?.name || 'N/A'}</td>
+                    <td>{order.orderDate ? new Date(order.orderDate).toLocaleString() : 'N/A'}</td>
+                    <td>{order.expectedDeliveryDate && !isNaN(new Date(order.expectedDeliveryDate)) ? new Date(order.expectedDeliveryDate).toLocaleString() : 'N/A'}</td>
+                    <td className="status-column">
+                      <span 
+                        className={`status-badge ${order.status.toLowerCase().replace(' ', '-')}`}
+                      >
+                        {order.status}
+                      </span>
+                      <button
+                        className="status-button"
+                        onClick={() => handleStatusChange(order._id, order.status)}
+                      >
+                        Update Status
+                      </button>
+                    </td>
+                    <td>${order.totalAmount}</td>
+                    <td>
+                      <button
+                        className="edit-button"
+                        onClick={() => handleEdit(order)}
+                      >
+                        Edit
+                      </button>
+                      <button
+                        className="delete-button"
+                        onClick={() => handleDelete(order._id)}
+                      >
+                        Delete
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
       </div>
-    </div>
+    </>
   );
-};
-
-export default StockOrderManagement;
+}
