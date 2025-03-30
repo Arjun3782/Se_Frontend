@@ -34,7 +34,10 @@ export default function Navbar() {
         <li><Link to="/production">Production</Link></li>
         <li><Link to="/stock-orders">Stock Orders</Link></li>
         {user && user.role === "admin" && (
-          <li><Link to="/users">Users</Link></li>
+          <>
+            <li><Link to="/users">Users</Link></li>
+            <li><Link to="/companies">Companies</Link></li>
+          </>
         )}
       </ul>
       {user && (

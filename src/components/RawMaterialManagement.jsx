@@ -9,12 +9,22 @@ import {
 import { useForm } from "react-hook-form";
 import "./RawMaterialManagement.css";
 
+import { createSelector } from '@reduxjs/toolkit';
+
+// Create memoized selectors
+const selectRawMaterials = createSelector(
+  state => state.material.rawMaterial,
+  rawMaterial => rawMaterial || []
+);
+
+const selectLoading = state => state.material.loading;
+
 export default function RawMaterialManagement() {
   const dispatch = useDispatch();
-  const { rawMaterial, loading } = useSelector((state) => ({
-    rawMaterial: state.material.rawMaterial || [],
-    loading: state.material.loading
-  }));
+  
+  // Use memoized selectors
+  const rawMaterial = useSelector(selectRawMaterials);
+  const loading = useSelector(selectLoading);
 
   useEffect(() => {
     dispatch(fetchRawMaterial());
@@ -152,6 +162,7 @@ export default function RawMaterialManagement() {
           setUpdateIndex(null);
           reset();
           setIsFormOpen(false);
+          // Fetch fresh data after update
           dispatch(fetchRawMaterial());
         })
         .catch((error) => {
@@ -160,9 +171,11 @@ export default function RawMaterialManagement() {
     } else {
       dispatch(addRawMaterial(newMaterial))
         .unwrap()
-        .then(() => {
+        .then((response) => {
+          console.log("Material added successfully:", response);
           reset();
           setIsFormOpen(false);
+          // Fetch fresh data after adding
           dispatch(fetchRawMaterial());
         })
         .catch((error) => {
@@ -212,10 +225,20 @@ export default function RawMaterialManagement() {
   };
 
   // Filter materials by date
+  // Add this debugging line
+  console.log("Raw Material Data:", rawMaterial);
+  
+  // Modify the filtering logic
   const filteredMaterials = searchDate
-    ? rawMaterial.filter((mat) => mat.date.startsWith(searchDate))
+    ? rawMaterial.filter((mat) => {
+        // Convert both dates to YYYY-MM-DD format for comparison
+        const itemDate = new Date(mat.date).toISOString().split('T')[0];
+        console.log(`Comparing: ${itemDate} with search date: ${searchDate}`);
+        return itemDate === searchDate;
+      })
     : rawMaterial;
-
+  
+  console.log("Filtered Materials:", filteredMaterials);
   // Calculate total stock
   const totalStock = rawMaterial.reduce((acc, mat) => {
     const productName = mat.p_name;

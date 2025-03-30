@@ -26,13 +26,13 @@ const Login = () => {
     setIsLogin(!isLogin);
   };
 
+  // Update the signupInfo state to remove department
   const [signupInfo, setSignupInfo] = useState({
     name: "",
     email: "",
     password: "",
     company_name: "",
     role: "staff",
-    department: "",
     phone: ""
   });
 
@@ -43,6 +43,7 @@ const Login = () => {
     setSignupInfo(copySignupInfo);
   };
 
+  // In the handleSignUp function, update to remove department
   const handleSignUp = async (e) => {
     e.preventDefault();
     const { name, email, password, company_name } = signupInfo;
@@ -107,23 +108,30 @@ const Login = () => {
         },
         withCredentials: true, // Important for refresh tokens
       });
-      const result = response.data; // Removed unnecessary await
-      const { message, success, accessToken, name, role, company_name, error } = result;
-      if (success) {
-        handleSuccess(message);
-        localStorage.setItem("token", accessToken);
+      const result = response.data;
+      
+      if (result.success) {
+        handleSuccess(result.message);
+        
+        // Store complete user information including company details
+        localStorage.setItem("token", result.accessToken);
         localStorage.setItem("user", JSON.stringify({
-          name,
-          role,
-          company_name
+          id: result.user.id,
+          name: result.user.name,
+          email: result.user.email,
+          role: result.user.role,
+          company_name: result.user.company_name,
+          companyId: result.user.companyId,
+          phone: result.user.phone
         }));
+        
         setTimeout(() => {
           navigate("/dashboard");
         }, 3000);
-      } else if (error && response.data.details) {
+      } else if (result.error && response.data.details) {
         return handleError(response.data.details.message);
       } else {
-        return handleError(message);
+        return handleError(result.message);
       }
     } catch (error) {
       if (error.response && error.response.status === 403) {
@@ -228,16 +236,6 @@ const Login = () => {
                 <option value="manager">Manager</option>
                 <option value="admin">Admin</option>
               </select>
-            </div>
-            <div className="input-field">
-              <input
-                type="text"
-                name="department"
-                id="department"
-                placeholder="Department (optional)"
-                value={signupInfo.department}
-                onChange={handleSignupChange}
-              />
             </div>
             <div className="input-field">
               <input

@@ -16,7 +16,7 @@ const Users = () => {
     password: "",
     company_name: "",
     role: "staff",
-    department: "",
+    // department field removed
     phone: ""
   });
 
@@ -34,39 +34,7 @@ const Users = () => {
       // });
       // setUsers(response.data);
       
-      // Mock data for now
-      setTimeout(() => {
-        setUsers([
-          {
-            _id: "1",
-            name: "Admin User",
-            email: "admin@example.com",
-            company_name: "Example Corp",
-            role: "admin",
-            department: "Management",
-            phone: "555-1234"
-          },
-          {
-            _id: "2",
-            name: "Manager User",
-            email: "manager@example.com",
-            company_name: "Example Corp",
-            role: "manager",
-            department: "Production",
-            phone: "555-5678"
-          },
-          {
-            _id: "3",
-            name: "Staff User",
-            email: "staff@example.com",
-            company_name: "Example Corp",
-            role: "staff",
-            department: "Inventory",
-            phone: "555-9012"
-          }
-        ]);
-        setLoading(false);
-      }, 1000);
+      
     } catch (error) {
       console.error("Error fetching users:", error);
       toast.error("Failed to load users");
@@ -101,7 +69,6 @@ const Users = () => {
         password: "",
         company_name: "",
         role: "staff",
-        department: "",
         phone: ""
       });
     } catch (error) {
@@ -118,7 +85,6 @@ const Users = () => {
       password: "", // Don't include password when editing
       company_name: user.company_name,
       role: user.role,
-      department: user.department || "",
       phone: user.phone || ""
     });
     setShowAddForm(true);
@@ -146,7 +112,6 @@ const Users = () => {
         password: "",
         company_name: "",
         role: "staff",
-        department: "",
         phone: ""
       });
     } catch (error) {
@@ -193,7 +158,6 @@ const Users = () => {
               password: "",
               company_name: "",
               role: "staff",
-              department: "",
               phone: ""
             });
           }}
@@ -265,16 +229,23 @@ const Users = () => {
               </select>
             </div>
             
+            // In the user form JSX, remove the department field
+            // Look for and remove:
+            {/* Remove this block
             <div className="form-group">
-              <label>Department (Optional)</label>
+              <label htmlFor="department">Department</label>
               <input
                 type="text"
+                id="department"
                 name="department"
                 value={formData.department}
                 onChange={handleInputChange}
               />
             </div>
+            */}
             
+            // Also remove department from the users table/list display
+            // If you have a table with user data, remove the department column
             <div className="form-group">
               <label>Phone (Optional)</label>
               <input
@@ -300,7 +271,6 @@ const Users = () => {
               <th>Email</th>
               <th>Company</th>
               <th>Role</th>
-              <th>Department</th>
               <th>Phone</th>
               <th>Actions</th>
             </tr>
@@ -316,7 +286,6 @@ const Users = () => {
                     {user.role}
                   </span>
                 </td>
-                <td>{user.department || "-"}</td>
                 <td>{user.phone || "-"}</td>
                 <td className="actions">
                   <button 
