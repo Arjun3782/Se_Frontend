@@ -8,6 +8,7 @@ const initialState = {
   rawMaterial: [],
   products: [],
   productions: [],
+  stockOrders: [],
   loading: false,
   error: null,
 };
@@ -345,10 +346,132 @@ export const updateProductionStatus = createAsyncThunk(
   }
 );
 
+// Stock Order Actions
+export const fetchStockOrders = createAsyncThunk(
+  "material/fetchStockOrders",
+  async (_, { rejectWithValue }) => {
+    try {
+      const token = localStorage.getItem("token");
+      const authToken = token ? (token.startsWith('Bearer ') ? token : `Bearer ${token}`) : '';
+      
+      if (!authToken) {
+        return rejectWithValue({ message: "Authentication token missing" });
+      }
+      
+      const response = await axios.get(
+        "http://localhost:3000/api/stockorder/getStockOrders",
+        {
+          headers: { Authorization: authToken }
+        }
+      );
+      return response.data.data || [];
+    } catch (error) {
+      return rejectWithValue(error.response?.data || { message: error.message });
+    }
+  }
+);
+
+export const addStockOrder = createAsyncThunk(
+  "material/addStockOrder",
+  async (data, { rejectWithValue }) => {
+    try {
+      const token = localStorage.getItem("token");
+      const authToken = token ? (token.startsWith('Bearer ') ? token : `Bearer ${token}`) : '';
+      
+      if (!authToken) {
+        return rejectWithValue({ message: "Authentication token missing" });
+      }
+      
+      const userData = JSON.parse(localStorage.getItem("user") || "{}");
+      
+      // Add companyId to the data being sent
+      const dataWithCompany = {
+        ...data,
+        companyId: userData.companyId || userData.company_id
+      };
+      
+      const response = await axios.post(
+        "http://localhost:3000/api/stockorder/addStockOrder",
+        dataWithCompany,
+        {
+          headers: { Authorization: authToken }
+        }
+      );
+      return response.data.data;
+    } catch (error) {
+      return rejectWithValue(error.response?.data || { message: error.message });
+    }
+  }
+);
+
+export const updateStockOrder = createAsyncThunk(
+  "material/updateStockOrder",
+  async ({ id, data }, { rejectWithValue }) => {
+    try {
+      const token = localStorage.getItem("token");
+      const authToken = token ? (token.startsWith('Bearer ') ? token : `Bearer ${token}`) : '';
+      
+      if (!authToken) {
+        return rejectWithValue({ message: "Authentication token missing" });
+      }
+      
+      const response = await axios.put(
+        `http://localhost:3000/api/stockorder/updateStockOrder/${id}`,
+        data,
+        {
+          headers: { Authorization: authToken }
+        }
+      );
+      return response.data.data;
+    } catch (error) {
+      return rejectWithValue(error.response?.data || { message: error.message });
+    }
+  }
+);
+
+export const deleteStockOrder = createAsyncThunk(
+  "material/deleteStockOrder",
+  async (id, { rejectWithValue }) => {
+    try {
+      const token = localStorage.getItem("token");
+      const authToken = token ? (token.startsWith('Bearer ') ? token : `Bearer ${token}`) : '';
+      
+      if (!authToken) {
+        return rejectWithValue({ message: "Authentication token missing" });
+      }
+      
+      const response = await axios.delete(
+        `http://localhost:3000/api/stockorder/deleteStockOrder/${id}`,
+        {
+          headers: { Authorization: authToken }
+        }
+      );
+      return { id, ...response.data };
+    } catch (error) {
+      return rejectWithValue(error.response?.data || { message: error.message });
+    }
+  }
+);
+
+// Add this to your materialSlice.js file
+// In the reducers section of your createSlice
+
 const materialSlice = createSlice({
   name: "material",
   initialState,
-  reducers: {},
+  reducers: {
+    // ... your existing reducers
+    
+    // Add this reducer to handle completed production items
+    addCompletedProductionToStockOrders: (state, action) => {
+      const completedProduction = action.payload;
+      // Store the completed production data for use in stock order form
+      state.completedProduction = completedProduction;
+    },
+    clearCompletedProduction: (state) => {
+      state.completedProduction = null;
+    }
+  },
   extraReducers: (builder) => {
     builder
       // Raw Material Reducers
@@ -483,3 +606,9 @@ const materialSlice = createSlice({
 });
 
 export default materialSlice.reducer;
+
+// Make sure to export these actions
+export const { 
+  addCompletedProductionToStockOrders,
+  clearCompletedProduction 
+} = materialSlice.actions;

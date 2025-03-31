@@ -483,7 +483,7 @@ export default function RawMaterialManagement() {
         )}
 
         {/* Data Table */}
-        <div className="container">
+        <div className="show">
           {loading ? (
             <div>Loading...</div>
           ) : error ? (

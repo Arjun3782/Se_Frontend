@@ -6,6 +6,7 @@ import Dashboard from "./components/Dashboard";
 import RawMaterials from "./components/RawMaterialManagement";
 import Production from "./components/ProductionManagement";
 import StockOrder from "./components/StockOrderManagement";
+import SalesOrderManagement from "./components/SalesOrderManagement"; // Changed from SalesOrderForm
 import Users from "./components/Users";
 import "./App.css"; // Changed from "./assets/styles/App.css"
 
@@ -86,6 +87,18 @@ const App = () => {
                 <Navbar /> {/* Changed from Navigation to Navbar */}
                 <div className="content">
                   <StockOrder />
+                </div>
+              </div>
+            </ProtectedRoute>
+          } />
+          
+          {/* Added new route for sales orders */}
+          <Route path="/sales-orders" element={
+            <ProtectedRoute>
+              <div className="main-container">
+                <Navbar />
+                <div className="content">
+                  <SalesOrderManagement />
                 </div>
               </div>
             </ProtectedRoute>

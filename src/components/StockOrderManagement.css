@@ -1,5 +1,7 @@
 /* Base Styles */
 .container {
+  display: flex;
+  flex-direction: column;
   padding: 20px;
   max-width: 1200px;
   margin: 0 auto;
@@ -10,6 +12,10 @@
   border-radius: 8px;
   padding: 20px;
   margin-bottom: 20px;
+}
+.show{
+  /* max-width: fit-content; */
+  width: 100%;
 }
 
 .order-overview {

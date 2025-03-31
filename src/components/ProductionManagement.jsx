@@ -1,12 +1,37 @@
 import { useEffect, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
-import { fetchRawMaterial } from "../features/materialSlice";
+import { fetchRawMaterial, addCompletedProductionToStockOrders } from "../features/materialSlice";
 import { useForm } from "react-hook-form";
 import axios from "axios";
 import "./ProductionManagement.css";
 
+// Create an axios instance with authentication
+const createAuthAxios = () => {
+  const token = localStorage.getItem('token');
+  return axios.create({
+    baseURL: 'http://localhost:3000',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`
+    }
+  });
+};
+
 export default function ProductionManagement() {
   const dispatch = useDispatch();
+  
+  // Configure axios to always include the token
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    if (token) {
+      axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+    }
+    
+    return () => {
+      // Clean up when component unmounts
+      delete axios.defaults.headers.common['Authorization'];
+    };
+  }, []);
   
   // Get raw materials from the existing materialSlice
   const rawMaterials = useSelector(state => state.material.rawMaterial || []);
@@ -17,6 +42,8 @@ export default function ProductionManagement() {
   const [productions, setProductions] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [showSalesOrderForm, setShowSalesOrderForm] = useState(false);
+  const [selectedProduction, setSelectedProduction] = useState(null);
 
   // Add error handling for authentication issues
   useEffect(() => {
@@ -41,6 +68,61 @@ export default function ProductionManagement() {
       }
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Update status function
+  const updateStatus = async (id, newStatus) => {
+    try {
+      const production = productions.find(p => p._id === id);
+      
+      // Update the production status
+      await axios.put(
+        `http://localhost:3000/api/production/updateProduction/${id}`,
+        { status: newStatus }
+      );
+      
+      // Update local state
+      setProductions(prev => 
+        prev.map(prod => prod._id === id ? {...prod, status: newStatus} : prod)
+      );
+      
+      // If status is completed, set end date to now and show sales order form
+      if (newStatus === "Completed") {
+        // Update production with end date
+        const updatedProduction = await axios.put(
+          `http://localhost:3000/api/production/updateProduction/${id}`,
+          { 
+            status: newStatus,
+            endDate: new Date()
+          }
+        );
+        
+        // Get the updated production data
+        const completedProduction = updatedProduction.data.data || production;
+        
+        // Store completed production in products database
+        try {
+          const authAxios = createAuthAxios();
+          await authAxios.post(
+            "/api/product/addCompletedProduction",
+            { production: completedProduction }
+          );
+          console.log("Production data added to products database");
+        } catch (err) {
+          console.error("Failed to add production to products:", err);
+        }
+        
+        setSelectedProduction(completedProduction);
+        dispatch(addCompletedProductionToStockOrders(completedProduction));
+        setShowSalesOrderForm(true);
+      }
+      
+      // Refresh data
+      fetchProductions();
+      
+    } catch (error) {
+      console.error("Failed to update status:", error);
     }
   };
 
@@ -424,8 +506,10 @@ export default function ProductionManagement() {
         const newStatus = button.getAttribute('data-status');
         if (newStatus !== currentStatus) {
           try {
+            const production = productions.find(p => p._id === id);
+            
             // Update the production status
-            const response = await axios.put(
+            await axios.put(
               `http://localhost:3000/api/production/updateProduction/${id}`,
               { status: newStatus }
             );
@@ -435,19 +519,97 @@ export default function ProductionManagement() {
               prev.map(prod => prod._id === id ? {...prod, status: newStatus} : prod)
             );
             
-            // If status is completed, set end date to now
+            // If status is completed, set end date to now and store in products database
             if (newStatus === "Completed") {
-              await axios.put(
+              // Update production with end date
+              const updatedProduction = await axios.put(
                 `http://localhost:3000/api/production/updateProduction/${id}`,
                 { 
                   status: newStatus,
                   endDate: new Date()
                 }
               );
+              
+              // Get the updated production data
+              const completedProduction = updatedProduction.data.data || production;
+              
+              // Store completed production in products database
+              try {
+                // Get token from localStorage
+                const token = localStorage.getItem('token');
+                
+                // Make the request with explicit token in headers
+                await axios.post(
+                  "http://localhost:3000/api/product/addCompletedProduction",
+                  { production: completedProduction },
+                  {
+                    headers: {
+                      'Authorization': `Bearer ${token}`,
+                      'Content-Type': 'application/json'
+                    }
+                  }
+                );
+                
+                console.log("Production data added to products database");
+                
+                // Update UI state
+                setSelectedProduction(completedProduction);
+                dispatch(addCompletedProductionToStockOrders(completedProduction));
+                setShowSalesOrderForm(true);
+              } catch (err) {
+                console.error("Failed to add production to products:", err);
+                
+                // If unauthorized, try to refresh the token
+                if (err.response?.status === 401) {
+                  try {
+                    // Try to refresh the token
+                    const refreshResponse = await axios.post(
+                      'http://localhost:3000/api/auth/refresh-token',
+                      {},
+                      { withCredentials: true } // Important for cookies
+                    );
+                    
+                    if (refreshResponse.data.success) {
+                      // Update token in localStorage
+                      localStorage.setItem('token', refreshResponse.data.accessToken);
+                      
+                      // Retry the request with the new token
+                      const newToken = refreshResponse.data.accessToken;
+                      await axios.post(
+                        "http://localhost:3000/api/product/addCompletedProduction",
+                        { production: completedProduction },
+                        {
+                          headers: {
+                            'Authorization': `Bearer ${newToken}`,
+                            'Content-Type': 'application/json'
+                          }
+                        }
+                      );
+                      
+                      console.log("Production data added to products database after token refresh");
+                      
+                      // Update UI state
+                      setSelectedProduction(completedProduction);
+                      dispatch(addCompletedProductionToStockOrders(completedProduction));
+                      setShowSalesOrderForm(true);
+                    } else {
+                      // If refresh fails, redirect to login
+                      alert("Your session has expired. Please login again.");
+                      localStorage.removeItem('token');
+                      window.location.href = '/login';
+                    }
+                  } catch (refreshError) {
+                    console.error("Failed to refresh token:", refreshError);
+                    alert("Your session has expired. Please login again.");
+                    localStorage.removeItem('token');
+                    window.location.href = '/login';
+                  }
+                }
+              }
+              
+              // Refresh data
+              fetchProductions();
             }
-            
-            // Refresh data
-            fetchProductions();
           } catch (error) {
             console.error("Failed to update status:", error);
           }
@@ -456,7 +618,6 @@ export default function ProductionManagement() {
         document.body.removeChild(dialog);
       });
     });
-    
     document.getElementById("cancel-btn").addEventListener("click", () => {
       dialog.close();
       document.body.removeChild(dialog);
