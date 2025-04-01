@@ -8,7 +8,7 @@ const initialState = {
   rawMaterial: [],
   products: [],
   productions: [],
-  stockOrders: [],
+  stock: [],
   loading: false,
   error: null,
 };
@@ -456,153 +456,113 @@ export const deleteStockOrder = createAsyncThunk(
 // Add this to your materialSlice.js file
 // In the reducers section of your createSlice
 
+// First, move this outside the slice definition (before the materialSlice declaration)
+export const addCompletedProductionToStock = createAsyncThunk(
+  "material/addCompletedProductionToStock",
+  async (production, { rejectWithValue }) => {
+    try {
+      const token = localStorage.getItem("token");
+      if (!token) {
+        throw new Error("Authentication token missing");
+      }
+
+      // Create the stock entry from the completed production
+      const stockEntry = {
+        productId: production.outputProduct.productId,
+        productName: production.outputProduct.productName,
+        quantity: production.outputProduct.quantity,
+        unitCost: production.outputProduct.unitCost,
+        totalCost: production.outputProduct.totalCost,
+        productionId: production._id,
+        date: new Date(),
+        source: "production",
+        notes: `Produced from production ${production.productionName}`
+      };
+
+      // Send to server
+      const response = await axios.post(
+        "http://localhost:3000/api/product/addToStock",
+        stockEntry,
+        {
+          headers: { 
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+      
+      console.log("Production added to stock:", response.data);
+      return { ...stockEntry, ...response.data };
+    } catch (error) {
+      console.error("Error adding production to stock:", error);
+      return rejectWithValue(error.response?.data || { error: error.message });
+    }
+  }
+);
+
+// Then fix the slice definition
 const materialSlice = createSlice({
   name: "material",
   initialState,
   reducers: {
-    // ... your existing reducers
-    
-    // Add this reducer to handle completed production items
+    // Add a new reducer to handle completed productions
     addCompletedProductionToStockOrders: (state, action) => {
-      const completedProduction = action.payload;
-      // Store the completed production data for use in stock order form
-      state.completedProduction = completedProduction;
+      const production = action.payload;
+      // Create a stock entry from the production
+      const stockEntry = {
+        id: Date.now().toString(), // Temporary ID until server response
+        productId: production.outputProduct.productId,
+        productName: production.outputProduct.productName,
+        quantity: production.outputProduct.quantity,
+        unitCost: production.outputProduct.unitCost,
+        totalCost: production.outputProduct.totalCost,
+        productionId: production._id,
+        date: new Date().toISOString(),
+        source: "production"
+      };
+      
+      // Add to stock array
+      state.stock.push(stockEntry);
     },
     clearCompletedProduction: (state) => {
-      state.completedProduction = null;
+      // Clear any completed production data if needed
     }
   },
   extraReducers: (builder) => {
-    builder
-      // Raw Material Reducers
-      .addCase(fetchRawMaterial.pending, (state) => {
-        state.loading = true;
-      })
-      .addCase(fetchRawMaterial.fulfilled, (state, action) => {
-        state.loading = false;
-        
-        // Log the action payload to see what we're getting
-        console.log("Action payload in reducer:", action.payload);
-        
-        // Handle different response formats
-        if (action.payload && action.payload.r_data) {
-          // Format: { success: true, r_data: [...] }
-          state.rawMaterial = action.payload.r_data;
-        } else if (Array.isArray(action.payload)) {
-          // Format: [...]
-          state.rawMaterial = action.payload;
-        } else if (action.payload && typeof action.payload === 'object') {
-          // Format: { key1: value1, key2: value2, ... }
-          // Try to find an array property
-          const arrayProp = Object.values(action.payload).find(val => Array.isArray(val));
-          if (arrayProp) {
-            state.rawMaterial = arrayProp;
-          } else {
-            // Last resort - convert object to array if possible
-            state.rawMaterial = Object.values(action.payload);
-          }
-        } else {
-          // Default to empty array if nothing else works
-          state.rawMaterial = [];
-        }
-        
-        console.log("Final rawMaterial state:", state.rawMaterial);
-        state.error = null;
-      })
-      .addCase(fetchRawMaterial.rejected, (state, action) => {
-        state.loading = false;
-        state.error = action.error.message;
-      })
-      .addCase(addRawMaterial.fulfilled, (state, action) => {
-        state.loading = false;
-        
-        console.log("Add raw material response in reducer:", action.payload);
-        
-        // The server returns the data in r_data property
-        if (action.payload && action.payload.r_data) {
-          // Add the new material to the state
-          state.rawMaterial.push(action.payload.r_data);
-          console.log("Added new material to state:", action.payload.r_data);
-        } else if (action.payload && action.payload.success) {
-          // If success is true but r_data is missing, the material might be in the root
-          const material = { ...action.payload };
-          delete material.success; // Remove success flag
-          
-          if (Object.keys(material).length > 0) {
-            state.rawMaterial.push(material);
-            console.log("Added material from root payload:", material);
-          }
-        } else if (action.payload && !Array.isArray(action.payload)) {
-          // If the payload is not an array but an object, it might be the material itself
-          state.rawMaterial.push(action.payload);
-          console.log("Added raw payload as material:", action.payload);
-        }
-        
-        state.error = null;
-      })
-      .addCase(addRawMaterial.rejected, (state, action) => {
-        state.loading = false;
-        state.error = action.payload?.error || action.error.message;
-      })
-      .addCase(addRawMaterial.pending, (state) => {
-        state.loading = true;
-        state.error = null;
-      })
-      .addCase(updateRawMaterial.fulfilled, (state, action) => {
-        const index = state.rawMaterial.findIndex(
-          (item) => item._id === action.payload._id
-        );
-        if (index !== -1) {
-          state.rawMaterial[index] = action.payload;
-        }
-      })
-      // Add the deleteRawMaterial reducer
-      .addCase(deleteRawMaterial.fulfilled, (state, action) => {
-        state.rawMaterial = state.rawMaterial.filter(
-          (item) => item._id !== action.payload.id
-        );
-      })
-      
-      // Product Reducers
-      .addCase(fetchProducts.pending, (state) => {
-        state.loading = true;
-      })
-      .addCase(fetchProducts.fulfilled, (state, action) => {
-        state.loading = false;
-        state.products = action.payload;
-      })
-      .addCase(fetchProducts.rejected, (state, action) => {
-        state.loading = false;
-        state.error = action.error.message;
-      })
-      .addCase(addProduct.fulfilled, (state, action) => {
-        state.products.push(action.payload);
-      })
-      
-      // Production Reducers
-      .addCase(fetchProductions.pending, (state) => {
-        state.loading = true;
-      })
-      .addCase(fetchProductions.fulfilled, (state, action) => {
-        state.loading = false;
-        state.productions = action.payload;
-      })
-      .addCase(fetchProductions.rejected, (state, action) => {
-        state.loading = false;
-        state.error = action.error.message;
-      })
-      .addCase(addProduction.fulfilled, (state, action) => {
-        state.productions.push(action.payload);
-      })
-      .addCase(updateProductionStatus.fulfilled, (state, action) => {
-        const index = state.productions.findIndex(
-          (item) => item._id === action.payload._id
-        );
-        if (index !== -1) {
-          state.productions[index] = action.payload;
-        }
-      });
-  },
+    // Raw Material Actions
+    builder.addCase(addRawMaterial.pending, (state) => {
+      state.loading = true;
+    });
+    builder.addCase(addRawMaterial.fulfilled, (state, action) => {
+      state.loading = false;
+      state.rawMaterial.push(action.payload.data);
+    });
+    builder.addCase(addRawMaterial.rejected, (state, action) => {
+      state.loading = false;
+      state.error = action.payload;
+    });
+    
+    // Handle the addCompletedProductionToStock action
+    builder.addCase(addCompletedProductionToStock.pending, (state) => {
+      state.loading = true;
+    });
+    builder.addCase(addCompletedProductionToStock.fulfilled, (state, action) => {
+      state.loading = false;
+      // Update the stock entry with server data if needed
+      const index = state.stock.findIndex(item => 
+        item.productionId === action.payload.productionId);
+      if (index !== -1) {
+        state.stock[index] = { ...state.stock[index], ...action.payload };
+      } else {
+        state.stock.push(action.payload);
+      }
+    });
+    builder.addCase(addCompletedProductionToStock.rejected, (state, action) => {
+      state.loading = false;
+      state.error = action.payload;
+    });
+    // ... other cases
+  }
 });
 
 export default materialSlice.reducer;

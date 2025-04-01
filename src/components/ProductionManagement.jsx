@@ -1,11 +1,13 @@
 import { useEffect, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
-import { fetchRawMaterial, addCompletedProductionToStockOrders } from "../features/materialSlice";
+import { 
+  fetchRawMaterial, 
+  addCompletedProductionToStockOrders,
+  addCompletedProductionToStock  
+} from "../features/materialSlice";
 import { useForm } from "react-hook-form";
 import axios from "axios";
 import "./ProductionManagement.css";
-
-// Create an axios instance with authentication
 const createAuthAxios = () => {
   const token = localStorage.getItem('token');
   return axios.create({
@@ -19,8 +21,7 @@ const createAuthAxios = () => {
 
 export default function ProductionManagement() {
   const dispatch = useDispatch();
-  
-  // Configure axios to always include the token
+
   useEffect(() => {
     const token = localStorage.getItem('token');
     if (token) {
@@ -28,89 +29,102 @@ export default function ProductionManagement() {
     }
     
     return () => {
-      // Clean up when component unmounts
       delete axios.defaults.headers.common['Authorization'];
     };
   }, []);
-  
-  // Get raw materials from the existing materialSlice
   const rawMaterials = useSelector(state => state.material.rawMaterial || []);
   const materialLoading = useSelector(state => state.material.loading);
   const materialError = useSelector(state => state.material.error);
-  
-  // Local state for productions
   const [productions, setProductions] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [showSalesOrderForm, setShowSalesOrderForm] = useState(false);
   const [selectedProduction, setSelectedProduction] = useState(null);
-
-  // Add error handling for authentication issues
   useEffect(() => {
     if (materialError && materialError.message === "Authentication token missing") {
       console.log("Authentication error detected, redirecting to login");
       window.location.href = '/login';
     }
   }, [materialError]);
-
-  // Fetch productions and raw materials
   const fetchProductions = async () => {
     setLoading(true);
     try {
-      const response = await axios.get("http://localhost:3000/api/production/getProductions");
+      const token = localStorage.getItem('token');
+      if (!token) {
+        window.location.href = '/login';
+        return;
+      }
+      const authAxios = createAuthAxios();
+      const response = await authAxios.get("/api/production/getProductions");
       setProductions(response.data.data || []);
       setError(null);
     } catch (err) {
       console.error("Error fetching productions:", err.response?.data || err.message);
       setError(err.response?.data || { error: err.message });
       if (err.response?.status === 401) {
+        alert("Your session has expired. Please login again.");
+        localStorage.removeItem('token');
         window.location.href = '/login';
       }
     } finally {
       setLoading(false);
     }
   };
-
-  // Update status function
   const updateStatus = async (id, newStatus) => {
     try {
       const production = productions.find(p => p._id === id);
+      const authAxios = createAuthAxios();
       
-      // Update the production status
-      await axios.put(
-        `http://localhost:3000/api/production/updateProduction/${id}`,
-        { status: newStatus }
+      console.log("Before update API call - token:", localStorage.getItem('token').substring(0, 10) + "...");
+      
+      // Combine both status update and end date setting in one call
+      const updatedData = { status: newStatus };
+      
+      // Add end date only if status is being set to Completed
+      if (newStatus === "Completed") {
+        updatedData.endDate = new Date();
+      }
+      
+      // Update the production status with a single API call
+      const updatedProduction = await authAxios.put(
+        `/api/production/updateProduction/${id}`,
+        updatedData
       );
       
-      // Update local state
+      console.log("After update API call - token:", localStorage.getItem('token').substring(0, 10) + "...");
+      
+      // Update local state - FIX: using updatedProduction instead of response
       setProductions(prev => 
-        prev.map(prod => prod._id === id ? {...prod, status: newStatus} : prod)
+        prev.map(prod => prod._id === id ? updatedProduction.data.data : prod)
       );
+      setError(null);
       
       // If status is completed, set end date to now and show sales order form
       if (newStatus === "Completed") {
-        // Update production with end date
-        const updatedProduction = await axios.put(
-          `http://localhost:3000/api/production/updateProduction/${id}`,
-          { 
-            status: newStatus,
-            endDate: new Date()
-          }
-        );
-        
         // Get the updated production data
         const completedProduction = updatedProduction.data.data || production;
         
+        console.log("Before addCompletedProduction API call - token:", localStorage.getItem('token').substring(0, 10) + "...");
+        
         // Store completed production in products database
         try {
-          const authAxios = createAuthAxios();
+          // Use the SAME authAxios instance for consistency
           await authAxios.post(
             "/api/product/addCompletedProduction",
             { production: completedProduction }
           );
+          
+          console.log("After addCompletedProduction API call - token:", localStorage.getItem('token').substring(0, 10) + "...");
           console.log("Production data added to products database");
         } catch (err) {
           console.error("Failed to add production to products:", err);
+          
+          // Proper error handling for axios errors
+          if (err.response && err.response.status === 401) {
+            alert("Your session has expired. Please login again.");
+            localStorage.removeItem('token');
+            window.location.href = '/login';
+          }
         }
         
         setSelectedProduction(completedProduction);
@@ -118,11 +132,17 @@ export default function ProductionManagement() {
         setShowSalesOrderForm(true);
       }
       
-      // Refresh data
-      fetchProductions();
-      
-    } catch (error) {
-      console.error("Failed to update status:", error);
+      // Return the updated production data
+      return updatedProduction.data;
+    } catch (err) {
+      console.error("Error updating production:", err.response?.data || err.message);
+      setError(err.response?.data || { error: err.message });
+      if (err.response?.status === 401) {
+        window.location.href = '/login';
+      }
+      throw err;
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -211,71 +231,95 @@ export default function ProductionManagement() {
     }
   }, [selectedMaterials, watchOutputQuantity, setValue]);
 
-  // Handle adding a material to the production
+  // Handle adding a material to the production with proper cleanup
   const handleAddMaterial = (materialGroup) => {
     const dialog = document.createElement("dialog");
     dialog.className = "material-dialog";
     
-    const content = document.createElement("div");
-    content.innerHTML = `
-      <h3>Select ${materialGroup.p_name} Quantity</h3>
-      <p>Available: ${materialGroup.totalQuantity}</p>
-      <input type="number" id="quantity-input" min="0.1" max="${materialGroup.totalQuantity}" step="0.1" value="1">
-      <div class="dialog-buttons">
-        <button id="cancel-btn">Cancel</button>
-        <button id="add-btn">Add</button>
-      </div>
-    `;
-    
-    dialog.appendChild(content);
-    document.body.appendChild(dialog);
-    dialog.showModal();
-    
-    document.getElementById("cancel-btn").addEventListener("click", () => {
-      dialog.close();
-      document.body.removeChild(dialog);
-    });
-    
-    document.getElementById("add-btn").addEventListener("click", () => {
-      const quantityInput = document.getElementById("quantity-input");
-      const quantity = parseFloat(quantityInput.value);
+    try {
+      const content = document.createElement("div");
+      content.innerHTML = `
+        <h3>Select ${materialGroup.p_name} Quantity</h3>
+        <p>Available: ${materialGroup.totalQuantity}</p>
+        <input type="number" id="quantity-input" min="0.1" max="${materialGroup.totalQuantity}" step="0.1" value="1">
+        <div class="dialog-buttons">
+          <button id="cancel-btn">Cancel</button>
+          <button id="add-btn">Add</button>
+        </div>
+      `;
       
-      if (quantity > 0 && quantity <= materialGroup.totalQuantity) {
-        // Find materials to use (starting with the oldest)
-        let remainingQuantity = quantity;
-        const materialsToUse = [];
+      dialog.appendChild(content);
+      document.body.appendChild(dialog);
+      dialog.showModal();
+      
+      const handleCancel = () => {
+        cleanupDialog();
+      };
+      
+      const handleAdd = () => {
+        const quantityInput = document.getElementById("quantity-input");
+        const quantity = parseFloat(quantityInput.value);
         
-        // Sort materials by date (oldest first)
-        const sortedMaterials = [...materialGroup.materials].sort(
-          (a, b) => new Date(a.date) - new Date(b.date)
-        );
-        
-        for (const material of sortedMaterials) {
-          if (remainingQuantity <= 0) break;
+        if (quantity > 0 && quantity <= materialGroup.totalQuantity) {
+          // Find materials to use (starting with the oldest)
+          let remainingQuantity = quantity;
+          const materialsToUse = [];
           
-          const quantityToUse = Math.min(remainingQuantity, material.quantity);
-          materialsToUse.push({
-            materialId: material._id,
-            p_id: material.p_id,
-            p_name: material.p_name,
-            quantityUsed: quantityToUse,
-            price: material.price
-          });
+          // Sort materials by date (oldest first)
+          const sortedMaterials = [...materialGroup.materials].sort(
+            (a, b) => new Date(a.date) - new Date(b.date)
+          );
           
-          remainingQuantity -= quantityToUse;
+          for (const material of sortedMaterials) {
+            if (remainingQuantity <= 0) break;
+            
+            const quantityToUse = Math.min(remainingQuantity, material.quantity);
+            materialsToUse.push({
+              materialId: material._id,
+              p_id: material.p_id,
+              p_name: material.p_name,
+              quantityUsed: quantityToUse,
+              price: material.price
+            });
+            
+            remainingQuantity -= quantityToUse;
+          }
+          
+          // Add to selected materials
+          setSelectedMaterials(prev => [...prev, ...materialsToUse]);
+          
+          // Update form value
+          const currentMaterials = watch("materials") || [];
+          setValue("materials", [...currentMaterials, ...materialsToUse]);
         }
         
-        // Add to selected materials
-        setSelectedMaterials(prev => [...prev, ...materialsToUse]);
-        
-        // Update form value
-        const currentMaterials = watch("materials") || [];
-        setValue("materials", [...currentMaterials, ...materialsToUse]);
-      }
+        cleanupDialog();
+      };
       
-      dialog.close();
-      document.body.removeChild(dialog);
-    });
+      // Function to clean up the dialog
+      const cleanupDialog = () => {
+        // Remove event listeners to prevent memory leaks
+        document.getElementById("cancel-btn").removeEventListener("click", handleCancel);
+        document.getElementById("add-btn").removeEventListener("click", handleAdd);
+        
+        // Close and remove dialog
+        dialog.close();
+        if (document.body.contains(dialog)) {
+          document.body.removeChild(dialog);
+        }
+      };
+      
+      // Add event listeners
+      document.getElementById("cancel-btn").addEventListener("click", handleCancel);
+      document.getElementById("add-btn").addEventListener("click", handleAdd);
+      
+    } catch (error) {
+      console.error("Error creating material dialog:", error);
+      // Ensure dialog is removed even if an error occurs
+      if (document.body.contains(dialog)) {
+        document.body.removeChild(dialog);
+      }
+    }
   };
 
   // Handle removing a material from the production
@@ -386,14 +430,11 @@ export default function ProductionManagement() {
         return;
       }
     }
-    
-    // Prepare the production data
     const productionData = {
       ...data,
       materials: selectedMaterials,
       companyId
     };
-
     try {
       if (isUpdating) {
         await updateProductionById(updateId, productionData);
@@ -410,14 +451,11 @@ export default function ProductionManagement() {
         reset();
         setIsFormOpen(false);
         setSelectedMaterials([]);
-        // Fetch fresh data after adding
         fetchProductions();
         dispatch(fetchRawMaterial());
       }
     } catch (error) {
       console.error("Failed to save production:", error);
-      
-      // Handle duplicate key error specifically
       if (error.response?.data?.error?.includes('duplicate key error')) {
         alert(`Production ID "${data.productionId}" already exists. Please use a different ID.`);
       } else {
@@ -425,15 +463,12 @@ export default function ProductionManagement() {
       }
     }
   };
-
-  // Handle edit
   const handleEdit = (production) => {
     setSelectedMaterials(production.materials || []);
     reset({
       productionId: production.productionId,
       productionName: production.productionName,
       startDate: new Date(production.startDate).toISOString().slice(0, 16),
-      // endDate removed
       status: production.status,
       materials: production.materials || [],
       outputProduct: production.outputProduct || {
@@ -449,8 +484,6 @@ export default function ProductionManagement() {
     setUpdateId(production._id);
     setIsFormOpen(true);
   };
-
-  // Handle delete
   const handleDelete = async (id) => {
     // Check for token before deleting
     const token = localStorage.getItem('token');
@@ -459,11 +492,9 @@ export default function ProductionManagement() {
       window.location.href = '/login';
       return;
     }
-
     if (window.confirm("Are you sure you want to delete this production?")) {
       try {
         await deleteProductionById(id);
-        // Fetch fresh data after successful deletion
         fetchProductions();
         dispatch(fetchRawMaterial());
       } catch (error) {
@@ -471,14 +502,10 @@ export default function ProductionManagement() {
       }
     }
   };
-  
-  // Add this function to handle status change
   const handleStatusChange = (id, currentStatus) => {
     const statusOptions = ["Planned", "In Progress", "Completed", "Cancelled"];
-    
     const dialog = document.createElement("dialog");
     dialog.className = "status-dialog";
-    
     const content = document.createElement("div");
     content.innerHTML = `
       <h3>Update Production Status</h3>
@@ -507,120 +534,132 @@ export default function ProductionManagement() {
         if (newStatus !== currentStatus) {
           try {
             const production = productions.find(p => p._id === id);
+            const token = localStorage.getItem('token');
+            console.log("token is :",token);
             
-            // Update the production status
-            await axios.put(
-              `http://localhost:3000/api/production/updateProduction/${id}`,
-              { status: newStatus }
+            if (!token) {
+              alert("Your session has expired. Please login again.");
+              window.location.href = '/login';
+              return;
+            }
+            
+            // Create a single authAxios instance to use for all API calls
+            const authAxios = createAuthAxios();
+            
+            // Define updatedData before using it
+            const updatedData = { 
+              status: newStatus 
+            };
+            
+            // Add end date if status is being set to Completed
+            if (newStatus === "Completed") {
+              updatedData.endDate = new Date();
+            }
+            
+            console.log("Using token:", token.substring(0, 10) + "...");
+            
+            // Use the same authAxios instance for all calls
+            const updatedProduction = await authAxios.put(
+              `/api/production/updateProduction/${id}`,
+              updatedData
             );
+            
+            console.log("After update API call - token:", token.substring(0, 10) + "...");
             
             // Update local state
             setProductions(prev => 
-              prev.map(prod => prod._id === id ? {...prod, status: newStatus} : prod)
+              prev.map(prod => prod._id === id ? updatedProduction.data.data : prod)
             );
             
-            // If status is completed, set end date to now and store in products database
+            // If status is completed, handle the completed production
             if (newStatus === "Completed") {
-              // Update production with end date
-              const updatedProduction = await axios.put(
-                `http://localhost:3000/api/production/updateProduction/${id}`,
-                { 
-                  status: newStatus,
-                  endDate: new Date()
-                }
-              );
-              
-              // Get the updated production data
               const completedProduction = updatedProduction.data.data || production;
               
-              // Store completed production in products database
+              console.log("Before addToStock API call - token:", token.substring(0, 10) + "...");
+              
+              // First, dispatch to add to Redux store
+              dispatch(addCompletedProductionToStockOrders(completedProduction));
+              
               try {
-                // Get token from localStorage
-                const token = localStorage.getItem('token');
+                // Get a fresh token for the second API call
+                const freshToken = localStorage.getItem('token');
                 
-                // Make the request with explicit token in headers
-                await axios.post(
-                  "http://localhost:3000/api/product/addCompletedProduction",
-                  { production: completedProduction },
+                // Create a new axios instance with the fresh token
+                const stockAxios = axios.create({
+                  baseURL: 'http://localhost:3000',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${freshToken}`
+                  }
+                });
+                
+                // Use the fresh axios instance for the stock API call
+                await stockAxios.post(
+                  "/api/product/addToStock",
                   {
-                    headers: {
-                      'Authorization': `Bearer ${token}`,
-                      'Content-Type': 'application/json'
-                    }
+                    productId: completedProduction.outputProduct.productId,
+                    productName: completedProduction.outputProduct.productName,
+                    quantity: completedProduction.outputProduct.quantity,
+                    unitCost: completedProduction.outputProduct.unitCost,
+                    totalCost: completedProduction.outputProduct.totalCost,
+                    productionId: completedProduction._id,
+                    date: new Date(),
+                    source: "production",
+                    notes: `Produced from production ${completedProduction.productionName}`
                   }
                 );
                 
-                console.log("Production data added to products database");
+                console.log("Production data added to stock via direct API call");
+              } catch (error) {
+                console.error("Error adding to stock:", error);
                 
-                // Update UI state
-                setSelectedProduction(completedProduction);
-                dispatch(addCompletedProductionToStockOrders(completedProduction));
-                setShowSalesOrderForm(true);
-              } catch (err) {
-                console.error("Failed to add production to products:", err);
-                
-                // If unauthorized, try to refresh the token
-                if (err.response?.status === 401) {
-                  try {
-                    // Try to refresh the token
-                    const refreshResponse = await axios.post(
-                      'http://localhost:3000/api/auth/refresh-token',
-                      {},
-                      { withCredentials: true } // Important for cookies
-                    );
-                    
-                    if (refreshResponse.data.success) {
-                      // Update token in localStorage
-                      localStorage.setItem('token', refreshResponse.data.accessToken);
-                      
-                      // Retry the request with the new token
-                      const newToken = refreshResponse.data.accessToken;
-                      await axios.post(
-                        "http://localhost:3000/api/product/addCompletedProduction",
-                        { production: completedProduction },
-                        {
-                          headers: {
-                            'Authorization': `Bearer ${newToken}`,
-                            'Content-Type': 'application/json'
-                          }
-                        }
-                      );
-                      
-                      console.log("Production data added to products database after token refresh");
-                      
-                      // Update UI state
-                      setSelectedProduction(completedProduction);
-                      dispatch(addCompletedProductionToStockOrders(completedProduction));
-                      setShowSalesOrderForm(true);
-                    } else {
-                      // If refresh fails, redirect to login
-                      alert("Your session has expired. Please login again.");
-                      localStorage.removeItem('token');
-                      window.location.href = '/login';
-                    }
-                  } catch (refreshError) {
-                    console.error("Failed to refresh token:", refreshError);
-                    alert("Your session has expired. Please login again.");
-                    localStorage.removeItem('token');
-                    window.location.href = '/login';
-                  }
+                if (error.response && error.response.status === 401) {
+                  alert("Your session has expired. Please login again to complete this action.");
+                  localStorage.removeItem('token');
+                  window.location.href = '/login';
+                } else {
+                  alert(`Failed to add production to stock: ${error.response?.data?.message || error.message}`);
                 }
               }
               
-              // Refresh data
-              fetchProductions();
+              // Update UI state
+              setSelectedProduction(completedProduction);
+              setShowSalesOrderForm(true);
             }
+            
           } catch (error) {
             console.error("Failed to update status:", error);
+            
+            if (error.response && error.response.status === 401) {
+              alert("Your session has expired. Please login again.");
+              localStorage.removeItem('token');
+              window.location.href = '/login';
+            } else {
+              // Show a more specific error message
+              alert(`Failed to update production: ${error.response?.data?.message || error.message}`);
+            }
+          } finally {
+            // Always clean up dialog in finally block to ensure it happens
+            if (document.body.contains(dialog)) {
+              dialog.close();
+              document.body.removeChild(dialog);
+            }
+          }
+        } else {
+          // If status didn't change, just close the dialog
+          if (document.body.contains(dialog)) {
+            dialog.close();
+            document.body.removeChild(dialog);
           }
         }
-        dialog.close();
-        document.body.removeChild(dialog);
       });
     });
+    
     document.getElementById("cancel-btn").addEventListener("click", () => {
-      dialog.close();
-      document.body.removeChild(dialog);
+      if (document.body.contains(dialog)) {
+        dialog.close();
+        document.body.removeChild(dialog);
+      }
     });
   };
   
