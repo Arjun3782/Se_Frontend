@@ -18,16 +18,13 @@ const createAuthAxios = () => {
     }
   });
 };
-
 export default function ProductionManagement() {
   const dispatch = useDispatch();
-
   useEffect(() => {
     const token = localStorage.getItem('token');
     if (token) {
       axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
     }
-    
     return () => {
       delete axios.defaults.headers.common['Authorization'];
     };
@@ -74,10 +71,7 @@ export default function ProductionManagement() {
     try {
       const production = productions.find(p => p._id === id);
       const authAxios = createAuthAxios();
-      
       console.log("Before update API call - token:", localStorage.getItem('token').substring(0, 10) + "...");
-      
-      // Combine both status update and end date setting in one call
       const updatedData = { status: newStatus };
       
       // Add end date only if status is being set to Completed
@@ -575,56 +569,38 @@ export default function ProductionManagement() {
             if (newStatus === "Completed") {
               const completedProduction = updatedProduction.data.data || production;
               
-              console.log("Before addToStock API call - token:", token.substring(0, 10) + "...");
+              console.log("Dispatching completed production to stock");
+              console.log("Completed production data:", completedProduction);
               
-              // First, dispatch to add to Redux store
-              dispatch(addCompletedProductionToStockOrders(completedProduction));
-              
-              try {
-                // Get a fresh token for the second API call
-                const freshToken = localStorage.getItem('token');
+              // Check if outputProduct exists and has all required properties before dispatching
+              if (completedProduction && 
+                  completedProduction.outputProduct && 
+                  completedProduction.outputProduct.productId && 
+                  completedProduction.outputProduct.productName && 
+                  completedProduction.outputProduct.quantity) {
+                console.log("product_id",completedProduction.outputProduct.productId);
+                // When dispatching the action
+                dispatch(addCompletedProductionToStock({
+                  productId: completedProduction.outputProduct.productId,
+                  productName: completedProduction.outputProduct.productName,
+                  quantity: completedProduction.outputProduct.quantity,
+                  unitCost: completedProduction.outputProduct.unitCost,
+                  totalCost: completedProduction.outputProduct.totalCost,
+                  productionId: completedProduction._id,
+                  // Don't include date here, let the thunk create it as an ISO string
+                  notes: `Produced from production ${completedProduction.productionName}`
+                }));
                 
-                // Create a new axios instance with the fresh token
-                const stockAxios = axios.create({
-                  baseURL: 'http://localhost:3000',
-                  headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${freshToken}`
-                  }
-                });
+                // Also dispatch to add to stock orders for UI state
+                dispatch(addCompletedProductionToStockOrders(completedProduction));
                 
-                // Use the fresh axios instance for the stock API call
-                await stockAxios.post(
-                  "/api/product/addToStock",
-                  {
-                    productId: completedProduction.outputProduct.productId,
-                    productName: completedProduction.outputProduct.productName,
-                    quantity: completedProduction.outputProduct.quantity,
-                    unitCost: completedProduction.outputProduct.unitCost,
-                    totalCost: completedProduction.outputProduct.totalCost,
-                    productionId: completedProduction._id,
-                    date: new Date(),
-                    source: "production",
-                    notes: `Produced from production ${completedProduction.productionName}`
-                  }
-                );
-                
-                console.log("Production data added to stock via direct API call");
-              } catch (error) {
-                console.error("Error adding to stock:", error);
-                
-                if (error.response && error.response.status === 401) {
-                  alert("Your session has expired. Please login again to complete this action.");
-                  localStorage.removeItem('token');
-                  window.location.href = '/login';
-                } else {
-                  alert(`Failed to add production to stock: ${error.response?.data?.message || error.message}`);
-                }
+                // Update UI state
+                setSelectedProduction(completedProduction);
+                setShowSalesOrderForm(true);
+              } else {
+                console.error("Cannot add to stock: Missing output product data", completedProduction);
+                alert("Cannot complete production: Missing output product information. Please edit the production to add output product details.");
               }
-              
-              // Update UI state
-              setSelectedProduction(completedProduction);
-              setShowSalesOrderForm(true);
             }
             
           } catch (error) {

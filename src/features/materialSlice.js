@@ -465,18 +465,19 @@ export const addCompletedProductionToStock = createAsyncThunk(
       if (!token) {
         throw new Error("Authentication token missing");
       }
-
+      
       // Create the stock entry from the completed production
+      // Convert Date object to ISO string to make it serializable
       const stockEntry = {
-        productId: production.outputProduct.productId,
-        productName: production.outputProduct.productName,
-        quantity: production.outputProduct.quantity,
-        unitCost: production.outputProduct.unitCost,
-        totalCost: production.outputProduct.totalCost,
-        productionId: production._id,
-        date: new Date(),
+        productId: production.productId,
+        productName: production.productName,
+        quantity: production.quantity,
+        unitCost: production.unitCost,
+        totalCost: production.totalCost,
+        productionId: production.productionId,
+        date: new Date().toISOString(), // Convert to ISO string instead of Date object
         source: "production",
-        notes: `Produced from production ${production.productionName}`
+        notes: production.notes || `Produced from production`
       };
 
       // Send to server
@@ -506,6 +507,7 @@ const materialSlice = createSlice({
   initialState,
   reducers: {
     // Add a new reducer to handle completed productions
+    // In the addCompletedProductionToStockOrders reducer
     addCompletedProductionToStockOrders: (state, action) => {
       const production = action.payload;
       // Create a stock entry from the production
@@ -517,7 +519,7 @@ const materialSlice = createSlice({
         unitCost: production.outputProduct.unitCost,
         totalCost: production.outputProduct.totalCost,
         productionId: production._id,
-        date: new Date().toISOString(),
+        date: new Date().toISOString(), // Use ISO string instead of Date object
         source: "production"
       };
       
