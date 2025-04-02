@@ -501,6 +501,34 @@ export const addCompletedProductionToStock = createAsyncThunk(
   }
 );
 
+// Add this after the other thunk actions but before the slice definition
+export const fetchStockItems = createAsyncThunk(
+  "material/fetchStockItems",
+  async (_, { rejectWithValue }) => {
+    try {
+      const token = localStorage.getItem("token");
+      const authToken = token ? (token.startsWith('Bearer ') ? token : `Bearer ${token}`) : '';
+      
+      if (!authToken) {
+        return rejectWithValue({ message: "Authentication token missing" });
+      }
+      
+      // Update this URL to match your server route
+      const response = await axios.get(
+        "http://localhost:3000/api/product/getStockItems",
+        {
+          headers: { Authorization: authToken }
+        }
+      );
+      
+      console.log("Stock items fetched:", response.data);
+      return response.data.data || [];
+    } catch (error) {
+      console.error("Error fetching stock items:", error);
+      return rejectWithValue(error.response?.data || { message: error.message });
+    }
+  }
+);
 // Then fix the slice definition
 const materialSlice = createSlice({
   name: "material",
@@ -563,6 +591,17 @@ const materialSlice = createSlice({
       state.loading = false;
       state.error = action.payload;
     });
+    builder.addCase(fetchStockItems.pending, (state) => {
+      state.loading = true;
+    });
+    builder.addCase(fetchStockItems.fulfilled, (state, action) => {
+      state.loading = false;
+      state.stock = action.payload;
+    });
+    builder.addCase(fetchStockItems.rejected, (state, action) => {
+      state.loading = false;
+      state.error = action.payload;
+    });
     // ... other cases
   }
 });
@@ -574,3 +613,8 @@ export const {
   addCompletedProductionToStockOrders,
   clearCompletedProduction 
 } = materialSlice.actions;
+
+
+// Then add the corresponding case in the extraReducers section
+// Inside the extraReducers builder
+
