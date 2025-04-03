@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import "./Login.css";
 import axios from "axios";
 import { useNavigate } from "react-router-dom";
@@ -22,6 +22,20 @@ const handleSuccess = (message) => {
 
 const Login = () => {
   const [isLogin, setIsLogin] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
+  
+  // Add font link to document head
+  useEffect(() => {
+    const link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = 'https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap';
+    document.head.appendChild(link);
+    
+    return () => {
+      document.head.removeChild(link);
+    };
+  }, []);
+  
   const toggleForm = () => {
     setIsLogin(!isLogin);
   };
@@ -46,8 +60,10 @@ const Login = () => {
   // In the handleSignUp function, update to remove department
   const handleSignUp = async (e) => {
     e.preventDefault();
+    setIsLoading(true);
     const { name, email, password, company_name } = signupInfo;
     if (!name || !email || !password || !company_name) {
+      setIsLoading(false);
       return handleError("Please fill all required fields");
     }
     try {
@@ -89,6 +105,8 @@ const Login = () => {
       } else {
         handleError(error.message || "An error occurred during signup");
       }
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -108,8 +126,10 @@ const Login = () => {
   
   const handleLogin = async (e) => {
     e.preventDefault();
+    setIsLoading(true);
     const { email, password } = loginInfo;
     if (!email || !password) {
+      setIsLoading(false);
       return handleError("Please fill all the fields");
     }
     try {
@@ -153,6 +173,8 @@ const Login = () => {
       } else {
         handleError(error.message || "An error occurred during login");
       }
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -161,7 +183,7 @@ const Login = () => {
       <div className={`form-container ${isLogin ? "" : "right-panel-active"}`}>
         {/* Login Form */}
         <div className="form-box login-box">
-          <h2>Login to Inventory System</h2>
+          <h2>Welcome Back</h2>
           <form onSubmit={handleLogin}>
             <div className="input-field">
               <input
@@ -184,8 +206,8 @@ const Login = () => {
                 onChange={handleLoginChange}
               />
             </div>
-            <button type="submit" className="btn">
-              Login
+            <button type="submit" className="btn" disabled={isLoading}>
+              {isLoading ? "Logging in..." : "Login"}
             </button>
             <p className="toggle-text">
               Don't have an account? <span className="toggle-link" onClick={toggleForm}>Sign up</span>
@@ -195,7 +217,7 @@ const Login = () => {
 
         {/* Signup Form */}
         <div className="form-box signup-box">
-          <h2>Sign Up for Inventory System</h2>
+          <h2>Create Account</h2>
           <form onSubmit={handleSignUp}>
             <div className="input-field">
               <input
@@ -259,8 +281,8 @@ const Login = () => {
                 onChange={handleSignupChange}
               />
             </div>
-            <button type="submit" className="btn">
-              Sign Up
+            <button type="submit" className="btn" disabled={isLoading}>
+              {isLoading ? "Creating Account..." : "Sign Up"}
             </button>
             <p>
               Already have an account? <span onClick={toggleForm}>Login</span>

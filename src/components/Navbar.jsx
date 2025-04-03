@@ -32,7 +32,7 @@ export default function Navbar() {
         <li><Link to="/">Home</Link></li>
         <li><Link to="/raw-materials">Raw Materials</Link></li>
         <li><Link to="/production">Production</Link></li>
-        <li><Link to="/stock-orders">Stock Orders</Link></li>
+        {/* <li><Link to="/stock-orders">Stock Orders</Link></li> */}
         <li><Link to="/sales-orders">Sales Orders</Link></li>
         {user && user.role === "admin" && (
           <>

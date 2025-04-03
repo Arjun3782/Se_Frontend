@@ -4,10 +4,16 @@
     margin: auto;
     font-family: "Poppins", sans-serif;
   }
-  
+  .container.raw{
+    display: flex;
+    flex-direction: column;
+    width: 90%;
+    margin: auto;
+    font-family: "Poppins", sans-serif;
+  }
   /* Dashboard Styling */
   .dashboard {
-    background: #2a2a72;
+    background: #ffffff;
     color: white;
     padding: 20px;
     border-radius: 10px;
@@ -27,7 +33,7 @@
   }
   
   .stock-card {
-    background: #4a47a3;
+    background: #ffffff;
     padding: 15px;
     border-radius: 8px;
     text-align: center;
@@ -35,6 +41,7 @@
   }
   
   .stock-card h3 {
+    color: black;
     font-size: 16px;
     margin: 0;
   }

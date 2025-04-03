@@ -1,5 +1,8 @@
 /* General container styling */
 .container {
+  display: flex;
+  flex-direction: column;
+  /* align-items: center; */
   width: 90%;
   margin: 20px auto;
   font-family: 'Arial', sans-serif;
@@ -519,7 +522,8 @@ tr:hover {
 }
 
 .data-table th {
-  background-color: #f5f5f5;
+  /* color: black; */
+  /* background-color: #f5f5f5; */
   font-weight: bold;
 }
 
@@ -654,6 +658,8 @@ tr:hover {
   background-color: #ffebee;
 }
 
+/* Add or update these styles in your ProductionManagement.css file */
+
 .materials-container {
   display: flex;
   gap: 20px;
@@ -664,38 +670,70 @@ tr:hover {
 .selected-materials {
   flex: 1;
   border: 1px solid #ddd;
-  border-radius: 4px;
+  border-radius: 5px;
   padding: 10px;
-}
-
-.material-list {
-  max-height: 200px;
+  background-color: #f9f9f9;
+  max-height: 300px;
   overflow-y: auto;
 }
 
-.material-item {
+.material-list {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 8px;
-  border-bottom: 1px solid #eee;
+  flex-direction: column;
+  gap: 8px;
 }
 
-.material-item:last-child {
-  border-bottom: none;
-}
-
-.material-item button {
-  padding: 4px 8px;
+.material-item {
+  background-color: white;
+  border: 1px solid #ddd;
   border-radius: 4px;
+  padding: 8px 12px;
   cursor: pointer;
+  transition: all 0.2s;
+  position: relative;
+}
+
+.material-item:hover {
+  background-color: #f0f7ff;
+  border-color: #0066cc;
+}
+
+.material-name {
+  font-weight: bold;
+  margin-bottom: 4px;
+}
+
+.material-quantity {
+  font-size: 0.9em;
+  color: #666;
+}
+
+.no-materials {
+  color: #999;
+  font-style: italic;
+  padding: 10px 0;
 }
 
 .material-dialog {
   border: none;
   border-radius: 8px;
   padding: 20px;
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  max-width: 400px;
+  width: 100%;
+}
+
+.material-dialog h3 {
+  margin-top: 0;
+  margin-bottom: 15px;
+}
+
+.material-dialog input {
+  width: 100%;
+  padding: 8px;
+  margin: 10px 0;
+  border: 1px solid #ddd;
+  border-radius: 4px;
 }
 
 .dialog-buttons {
@@ -706,26 +744,220 @@ tr:hover {
 }
 
 .dialog-buttons button {
-  padding: 8px 15px;
+  padding: 8px 16px;
+  border: none;
   border-radius: 4px;
   cursor: pointer;
 }
 
-.dialog-buttons #cancel-btn {
+#cancel-btn {
   background-color: #f5f5f5;
-  border: 1px solid #ddd;
+  color: #333;
 }
 
-.dialog-buttons #add-btn {
+#add-btn {
+  background-color: #1890ff;
+  color: white;
+}
+
+.refresh-button {
+  background-color: #2196f3;
+  color: white;
+  border: none;
+  padding: 10px 15px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: bold;
+  margin-right: 10px;
+}
+
+.refresh-button:hover {
+  background-color: #0b7dda;
+}
+
+/* Material Selection Styling */
+.material-selection-section {
+  margin: 20px 0;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  padding: 15px;
+  background-color: #f9f9f9;
+}
+
+.material-selection-section h4 {
+  margin-top: 0;
+  margin-bottom: 15px;
+  color: #333;
+  font-size: 18px;
+}
+
+.material-selection-section h5 {
+  margin-top: 10px;
+  margin-bottom: 10px;
+  color: #555;
+  font-size: 16px;
+}
+
+.materials-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 15px;
+  margin-bottom: 20px;
+}
+
+.material-card {
+  background-color: white;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  padding: 12px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.material-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+}
+
+.material-card h6 {
+  margin-top: 0;
+  margin-bottom: 8px;
+  font-size: 15px;
+  color: #333;
+}
+
+.material-card p {
+  margin: 5px 0;
+  font-size: 14px;
+  color: #666;
+}
+
+.add-material-btn {
   background-color: #4caf50;
   color: white;
   border: none;
+  border-radius: 4px;
+  padding: 6px 12px;
+  cursor: pointer;
+  font-size: 14px;
+  margin-top: 8px;
+  transition: background-color 0.2s;
 }
 
-.error-message {
-  color: #f44336;
+.add-material-btn:hover {
+  background-color: #3d8b40;
+}
+
+.materials-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 15px;
+}
+
+.materials-table th,
+.materials-table td {
   padding: 10px;
-  background-color: #ffebee;
+  text-align: left;
+  border-bottom: 1px solid #ddd;
+}
+
+.materials-table th {
+  background-color: #f2f2f2;
+  font-weight: 600;
+}
+
+.remove-material-btn {
+  background-color: #f44336;
+  color: white;
+  border: none;
   border-radius: 4px;
+  padding: 5px 10px;
+  cursor: pointer;
+  font-size: 13px;
+  transition: background-color 0.2s;
+}
+
+.remove-material-btn:hover {
+  background-color: #d32f2f;
+}
+
+.no-materials {
+  color: #888;
+  font-style: italic;
+  padding: 10px;
+  text-align: center;
+  background-color: #f5f5f5;
+  border-radius: 4px;
+}
+
+.output-section {
+  margin: 20px 0;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  padding: 15px;
+  background-color: #f9f9f9;
+}
+
+.output-section h4 {
+  margin-top: 0;
+  margin-bottom: 15px;
+  color: #333;
+  font-size: 18px;
+}
+
+/* Material dialog styling */
+.material-dialog {
+  border: none;
+  border-radius: 8px;
+  padding: 20px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+  max-width: 400px;
+  width: 100%;
+}
+
+.material-dialog h3 {
+  margin-top: 0;
+  margin-bottom: 15px;
+  color: #333;
+}
+
+.material-dialog p {
+  margin-bottom: 15px;
+  color: #666;
+}
+
+.material-dialog input {
+  width: 100%;
+  padding: 10px;
+  margin-bottom: 20px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+}
+
+.dialog-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.dialog-buttons button {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.dialog-buttons button#cancel-btn {
+  background-color: #f5f5f5;
+  color: #333;
+}
+
+.dialog-buttons button#add-btn {
+  background-color: #4caf50;
+  color: white;
+}
+
+.dialog-buttons button:hover {
+  opacity: 0.9;
 }
   

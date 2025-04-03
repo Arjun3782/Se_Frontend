@@ -139,19 +139,31 @@ export default function ProductionManagement() {
       setLoading(false);
     }
   };
-
   useEffect(() => {
-    // Check if token exists before fetching
     const token = localStorage.getItem('token');
     if (token) {
       fetchProductions();
-      dispatch(fetchRawMaterial());
+      dispatch(fetchRawMaterial())
+        .unwrap()
+        .then(response => {
+          console.log("Initial raw materials fetch successful:", response);
+          // If response is empty but should have data, try fetching again after a short delay
+          if ((!response || (Array.isArray(response) && response.length === 0)) && 
+              (!response.r_data || (Array.isArray(response.r_data) && response.r_data.length === 0))) {
+            setTimeout(() => {
+              console.log("Retrying raw materials fetch...");
+              dispatch(fetchRawMaterial());
+            }, 1000);
+          }
+        })
+        .catch(error => {
+          console.error("Error in initial raw materials fetch:", error);
+        });
     } else {
       // Redirect to login if no token
       window.location.href = '/login';
     }
   }, [dispatch]);
-
   const {
     register,
     handleSubmit,
@@ -164,7 +176,6 @@ export default function ProductionManagement() {
       productionId: "",
       productionName: "",
       startDate: new Date().toISOString().slice(0, 16),
-      // endDate removed
       status: "Planned",
       materials: [],
       outputProduct: {
@@ -177,154 +188,150 @@ export default function ProductionManagement() {
       notes: "",
     },
   });
-
-  // State declarations
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
   const [updateId, setUpdateId] = useState(null);
   const [searchDate, setSearchDate] = useState("");
   const [selectedMaterials, setSelectedMaterials] = useState([]);
   const [availableMaterials, setAvailableMaterials] = useState([]);
-
-  // Watch for changes in materials and output quantity
   const watchMaterials = watch("materials");
   const watchOutputQuantity = watch("outputProduct.quantity");
-
-  // Update available materials when raw materials change
   useEffect(() => {
-    if (rawMaterials.length > 0) {
+    console.log("Raw materials from Redux:", rawMaterials);
+    if (!rawMaterials) {
+      console.log("Raw materials is null or undefined");
+      setAvailableMaterials([]);
+      return;
+    }
+    
+    let materialsToProcess = [];
+    
+    // Handle the specific structure we see in the console
+    if (rawMaterials && rawMaterials.r_data && Array.isArray(rawMaterials.r_data)) {
+      console.log("Processing r_data array with length:", rawMaterials.r_data.length);
+      materialsToProcess = rawMaterials.r_data;
+    } else if (rawMaterials && rawMaterials.data && Array.isArray(rawMaterials.data)) {
+      console.log("Processing data array with length:", rawMaterials.data.length);
+      materialsToProcess = rawMaterials.data;
+    } else if (Array.isArray(rawMaterials)) {
+      console.log("Processing raw materials as array with length:", rawMaterials.length);
+      materialsToProcess = rawMaterials;
+    } else {
+      console.log("Raw materials has unexpected structure:", typeof rawMaterials);
+      console.log("Raw materials keys:", Object.keys(rawMaterials));
+      setAvailableMaterials([]);
+      return;
+    }
+    
+    if (materialsToProcess.length === 0) {
+      console.log("No materials to process (empty array)");
+      setAvailableMaterials([]);
+      return;
+    }
+    
+    console.log("First material item:", materialsToProcess[0]);
+    
+    try {
       // Group materials by product ID
-      const groupedMaterials = rawMaterials.reduce((acc, material) => {
-        if (!acc[material.p_id]) {
-          acc[material.p_id] = {
-            p_id: material.p_id,
-            p_name: material.p_name,
+      const groupedMaterials = materialsToProcess.reduce((acc, material) => {
+        if (!material) {
+          console.log("Material is null or undefined");
+          return acc;
+        }
+        
+        // Make sure we have a p_id
+        const productId = material.p_id || material._id;
+        if (!productId) {
+          console.log("Material missing product ID:", material);
+          return acc;
+        }
+        
+        if (!acc[productId]) {
+          acc[productId] = {
+            p_id: productId,
+            p_name: material.p_name || material.s_name || "Unknown Product",
             totalQuantity: 0,
-            materials: []
+            materials: [],
+            price: material.price || 0
           };
         }
-        acc[material.p_id].totalQuantity += material.quantity;
-        acc[material.p_id].materials.push(material);
+        
+        const quantity = Number(material.quantity || 0);
+        acc[productId].totalQuantity += quantity;
+        acc[productId].materials.push(material);
+        
         return acc;
       }, {});
       
-      setAvailableMaterials(Object.values(groupedMaterials));
+      const materialsArray = Object.values(groupedMaterials);
+      console.log("Processed available materials:", materialsArray);
+      setAvailableMaterials(materialsArray);
+    } catch (error) {
+      console.error("Error processing materials:", error);
+      setAvailableMaterials([]);
     }
   }, [rawMaterials]);
-
-  // Calculate total cost when materials change
   useEffect(() => {
     if (selectedMaterials.length > 0 && watchOutputQuantity) {
       const totalMaterialCost = selectedMaterials.reduce(
         (sum, material) => sum + (material.quantityUsed * material.price), 0
       );
-      
       const unitCost = totalMaterialCost / watchOutputQuantity;
       setValue("outputProduct.unitCost", unitCost.toFixed(2));
       setValue("outputProduct.totalCost", totalMaterialCost.toFixed(2));
     }
   }, [selectedMaterials, watchOutputQuantity, setValue]);
-
-  // Handle adding a material to the production with proper cleanup
+  // Add these handler functions
+  // Modify the handleAddMaterial function to properly handle the material data
   const handleAddMaterial = (materialGroup) => {
+    // Create a proper dialog instead of using prompt
     const dialog = document.createElement("dialog");
     dialog.className = "material-dialog";
     
-    try {
-      const content = document.createElement("div");
-      content.innerHTML = `
-        <h3>Select ${materialGroup.p_name} Quantity</h3>
-        <p>Available: ${materialGroup.totalQuantity}</p>
-        <input type="number" id="quantity-input" min="0.1" max="${materialGroup.totalQuantity}" step="0.1" value="1">
-        <div class="dialog-buttons">
-          <button id="cancel-btn">Cancel</button>
-          <button id="add-btn">Add</button>
-        </div>
-      `;
+    dialog.innerHTML = `
+      <h3>Add ${materialGroup.p_name}</h3>
+      <p>Available: ${materialGroup.totalQuantity.toFixed(2)} kg</p>
+      <input type="number" id="quantity-input" min="0.1" max="${materialGroup.totalQuantity}" step="0.1" value="1">
+      <div class="dialog-buttons">
+        <button id="cancel-btn">Cancel</button>
+        <button id="add-btn">Add</button>
+      </div>
+    `;
+    
+    document.body.appendChild(dialog);
+    dialog.showModal();
+    
+    document.getElementById("add-btn").addEventListener("click", () => {
+      const quantityInput = document.getElementById("quantity-input");
+      const quantity = parseFloat(quantityInput.value);
       
-      dialog.appendChild(content);
-      document.body.appendChild(dialog);
-      dialog.showModal();
-      
-      const handleCancel = () => {
-        cleanupDialog();
-      };
-      
-      const handleAdd = () => {
-        const quantityInput = document.getElementById("quantity-input");
-        const quantity = parseFloat(quantityInput.value);
-        
-        if (quantity > 0 && quantity <= materialGroup.totalQuantity) {
-          // Find materials to use (starting with the oldest)
-          let remainingQuantity = quantity;
-          const materialsToUse = [];
-          
-          // Sort materials by date (oldest first)
-          const sortedMaterials = [...materialGroup.materials].sort(
-            (a, b) => new Date(a.date) - new Date(b.date)
-          );
-          
-          for (const material of sortedMaterials) {
-            if (remainingQuantity <= 0) break;
-            
-            const quantityToUse = Math.min(remainingQuantity, material.quantity);
-            materialsToUse.push({
-              materialId: material._id,
-              p_id: material.p_id,
-              p_name: material.p_name,
-              quantityUsed: quantityToUse,
-              price: material.price
-            });
-            
-            remainingQuantity -= quantityToUse;
+      if (quantity > 0 && quantity <= materialGroup.totalQuantity) {
+        // Create a material object with all necessary properties
+        setSelectedMaterials(prev => [
+          ...prev, 
+          {
+            p_id: materialGroup.p_id,
+            p_name: materialGroup.p_name,
+            quantityUsed: quantity,
+            price: materialGroup.materials[0]?.price || 0, // Add price for cost calculation
+            materialId: materialGroup.materials[0]?._id // Add materialId for API calls
           }
-          
-          // Add to selected materials
-          setSelectedMaterials(prev => [...prev, ...materialsToUse]);
-          
-          // Update form value
-          const currentMaterials = watch("materials") || [];
-          setValue("materials", [...currentMaterials, ...materialsToUse]);
-        }
-        
-        cleanupDialog();
-      };
-      
-      // Function to clean up the dialog
-      const cleanupDialog = () => {
-        // Remove event listeners to prevent memory leaks
-        document.getElementById("cancel-btn").removeEventListener("click", handleCancel);
-        document.getElementById("add-btn").removeEventListener("click", handleAdd);
-        
-        // Close and remove dialog
-        dialog.close();
-        if (document.body.contains(dialog)) {
-          document.body.removeChild(dialog);
-        }
-      };
-      
-      // Add event listeners
-      document.getElementById("cancel-btn").addEventListener("click", handleCancel);
-      document.getElementById("add-btn").addEventListener("click", handleAdd);
-      
-    } catch (error) {
-      console.error("Error creating material dialog:", error);
-      // Ensure dialog is removed even if an error occurs
-      if (document.body.contains(dialog)) {
-        document.body.removeChild(dialog);
+        ]);
       }
-    }
-  };
-
-  // Handle removing a material from the production
-  const handleRemoveMaterial = (index) => {
-    const updatedMaterials = [...selectedMaterials];
-    updatedMaterials.splice(index, 1);
-    setSelectedMaterials(updatedMaterials);
-    setValue("materials", updatedMaterials);
+      
+      dialog.close();
+      document.body.removeChild(dialog);
+    });
+    
+    document.getElementById("cancel-btn").addEventListener("click", () => {
+      dialog.close();
+      document.body.removeChild(dialog);
+    });
   };
   
-  // Add production function
+  const handleRemoveMaterial = (index) => {
+    setSelectedMaterials(prev => prev.filter((_, i) => i !== index));
+  };
   const addProduction = async (productionData) => {
     setLoading(true);
     try {
@@ -346,8 +353,6 @@ export default function ProductionManagement() {
       setLoading(false);
     }
   };
-  
-  // Update production function
   const updateProductionById = async (id, productionData) => {
     setLoading(true);
     try {
@@ -371,8 +376,6 @@ export default function ProductionManagement() {
       setLoading(false);
     }
   };
-  
-  // Delete production function
   const deleteProductionById = async (id) => {
     setLoading(true);
     try {
@@ -390,18 +393,13 @@ export default function ProductionManagement() {
       setLoading(false);
     }
   };
-  
-  // Update onSubmit function
   const onSubmit = async (data) => {
-    // Make sure we have a valid token before submitting
     const token = localStorage.getItem('token');
     if (!token) {
       console.error("No authentication token found");
       window.location.href = '/login';
       return;
     }
-
-    // Ensure we have the company ID
     const user = JSON.parse(localStorage.getItem('user') || '{}');
     const companyId = user.companyId;
     
@@ -428,8 +426,16 @@ export default function ProductionManagement() {
       ...data,
       materials: selectedMaterials,
       companyId
-    };
+    };    
     try {
+      const authAxios = createAuthAxios();
+      const materialsToUpdate = selectedMaterials.map(material => ({
+        materialId: material.materialId,
+        quantityUsed: material.quantityUsed
+      }));
+      await authAxios.post('/api/rawmaterial/updateQuantities', {
+        materials: materialsToUpdate
+      });
       if (isUpdating) {
         await updateProductionById(updateId, productionData);
         setIsUpdating(false);
@@ -437,7 +443,6 @@ export default function ProductionManagement() {
         reset();
         setIsFormOpen(false);
         setSelectedMaterials([]);
-        // Fetch fresh data after update
         fetchProductions();
         dispatch(fetchRawMaterial());
       } else {
@@ -452,6 +457,8 @@ export default function ProductionManagement() {
       console.error("Failed to save production:", error);
       if (error.response?.data?.error?.includes('duplicate key error')) {
         alert(`Production ID "${data.productionId}" already exists. Please use a different ID.`);
+      } else if (error.response?.data?.error?.includes('insufficient quantity')) {
+        alert(`Error: Some materials no longer have sufficient quantity available. Please refresh and try again.`);
       } else {
         alert(`Error: ${error.response?.data?.error || "Failed to save production. Please try again."}`);
       }
@@ -479,7 +486,6 @@ export default function ProductionManagement() {
     setIsFormOpen(true);
   };
   const handleDelete = async (id) => {
-    // Check for token before deleting
     const token = localStorage.getItem('token');
     if (!token) {
       console.error("No authentication token found");
@@ -515,12 +521,9 @@ export default function ProductionManagement() {
         <button id="cancel-btn">Cancel</button>
       </div>
     `;
-    
     dialog.appendChild(content);
     document.body.appendChild(dialog);
     dialog.showModal();
-    
-    // Add event listeners for status buttons
     const statusButtons = dialog.querySelectorAll('.status-option');
     statusButtons.forEach(button => {
       button.addEventListener('click', async () => {
@@ -530,26 +533,18 @@ export default function ProductionManagement() {
             const production = productions.find(p => p._id === id);
             const token = localStorage.getItem('token');
             console.log("token is :",token);
-            
             if (!token) {
               alert("Your session has expired. Please login again.");
               window.location.href = '/login';
               return;
             }
-            
-            // Create a single authAxios instance to use for all API calls
             const authAxios = createAuthAxios();
-            
-            // Define updatedData before using it
             const updatedData = { 
               status: newStatus 
             };
-            
-            // Add end date if status is being set to Completed
             if (newStatus === "Completed") {
               updatedData.endDate = new Date();
             }
-            
             console.log("Using token:", token.substring(0, 10) + "...");
             
             // Use the same authAxios instance for all calls
@@ -679,192 +674,226 @@ export default function ProductionManagement() {
             </div>
           </div>
         </div>
-
-        {/* Search & Add Button */}
         <div className="actions">
           <input
             type="date"
             value={searchDate}
             onChange={(e) => setSearchDate(e.target.value)}
           />
+          <button 
+            className="refresh-button" 
+            onClick={() => {
+              console.log("Manually refreshing data...");
+              fetchProductions();
+              dispatch(fetchRawMaterial())
+                .unwrap()
+                .then(response => {
+                  console.log("Raw materials fetched successfully:", response);
+                })
+                .catch(error => {
+                  console.error("Error fetching raw materials:", error);
+                });
+            }}
+          >
+            ↻ Refresh Data
+          </button>
           <button className="add-button" onClick={() => setIsFormOpen(true)}>
             + Add Production
           </button>
         </div>
-
-        {/* Popup Form */}
         {isFormOpen && (
           <div className="overlay">
-            <div className="form-popup production-form">
+            <div className="form-popup">
               <h3>{isUpdating ? "Update Production" : "Add Production"}</h3>
               <form onSubmit={handleSubmit(onSubmit)}>
-                <div className="form-group">
-                  <label>Production ID</label>
+                <div>
                   <input
-                    type="text"
-                    {...register("productionId", { required: true })}
+                    {...register("productionId", {
+                      required: "Production ID is required",
+                    })}
+                    placeholder="Production ID"
                   />
-                  {errors.productionId && <span className="error">This field is required</span>}
+                  {errors.productionId && (
+                    <span className="error">{errors.productionId.message}</span>
+                  )}
                 </div>
-                
-                <div className="form-group">
-                  <label>Production Name</label>
+                <div>
                   <input
-                    type="text"
-                    {...register("productionName", { required: true })}
+                    {...register("productionName", {
+                      required: "Production Name is required",
+                    })}
+                    placeholder="Production Name"
                   />
-                  {errors.productionName && <span className="error">This field is required</span>}
+                  {errors.productionName && (
+                    <span className="error">{errors.productionName.message}</span>
+                  )}
                 </div>
-                
-                <div className="form-row">
-                  <div className="form-group">
-                    <label>Start Date</label>
-                    <input
-                      type="datetime-local"
-                      {...register("startDate", { required: true })}
-                    />
-                    {errors.startDate && <span className="error">This field is required</span>}
+                <div className="material-selection-section">
+                  <h4>Select Raw Materials</h4>
+                  {console.log("Available materials in render:", availableMaterials)}
+                  {console.log("Raw materials from Redux in render:", rawMaterials)}
+                  <div className="available-materials">
+                    <h5>Available Materials</h5>
+                    {availableMaterials && availableMaterials.length > 0 ? (
+                      <div className="materials-grid">
+                        {availableMaterials.map((materialGroup) => (
+                          <div key={materialGroup.p_id} className="material-card">
+                            <h6>{materialGroup.p_name}</h6>
+                            <p>Available: {materialGroup.totalQuantity.toFixed(2)} kg</p>
+                            <button 
+                              type="button" 
+                              className="add-material-btn"
+                              onClick={() => handleAddMaterial(materialGroup)}
+                            >
+                              + Add
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="no-materials">No raw materials available 
+                        {materialLoading ? ' (Loading...)' : ''}
+                        {!materialLoading && rawMaterials ? ' (Data structure: ' + (typeof rawMaterials) + ')' : ''}
+                      </p>
+                    )}
                   </div>
-                  
-                  {/* End Date field removed */}
+                  <div className="selected-materials">
+                    <h5>Selected Materials</h5>
+                    {selectedMaterials && selectedMaterials.length > 0 ? (
+                      <table className="materials-table">
+                        <thead>
+                          <tr>
+                            <th>Material</th>
+                            <th>Quantity (kg)</th>
+                            <th>Action</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {selectedMaterials.map((material, index) => (
+                            <tr key={index}>
+                              <td>{material.p_name}</td>
+                              <td>{material.quantityUsed.toFixed(2)}</td>
+                              <td>
+                                <button 
+                                  type="button" 
+                                  className="remove-material-btn"
+                                  onClick={() => handleRemoveMaterial(index)}
+                                >
+                                  Remove
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                        <tfoot>
+                          <tr>
+                            <td colSpan="3"><strong>Total Cost:</strong></td>
+                            <td colSpan="2">
+                              <strong>
+                                ₹{selectedMaterials.reduce((sum, mat) => sum + (mat.quantityUsed * mat.price), 0).toFixed(2)}
+                              </strong>
+                            </td>
+                          </tr>
+                        </tfoot>
+                      </table>
+                    ) : (
+                      <p className="no-materials">No materials selected</p>
+                    )}
+                  </div>
                 </div>
-                
-                <div className="form-group">
-                  <label>Status</label>
-                  <select {...register("status", { required: true })}>
+                <div className="output-section">
+                  <h4>Output Product</h4>
+                  <div>
+                    <input
+                      {...register("outputProduct.productId", {
+                        required: "Product ID is required",
+                      })}
+                      placeholder="Product ID"
+                    />
+                    {errors.outputProduct?.productId && (
+                      <span className="error">{errors.outputProduct.productId.message}</span>
+                    )}
+                  </div>
+                  <div>
+                    <input
+                      {...register("outputProduct.productName", {
+                        required: "Product Name is required",
+                      })}
+                      placeholder="Product Name"
+                    />
+                    {errors.outputProduct?.productName && (
+                      <span className="error">{errors.outputProduct.productName.message}</span>
+                    )}
+                  </div>
+                  <div>
+                    <input
+                      type="number"
+                      step="0.01"
+                      {...register("outputProduct.quantity", {
+                        required: "Quantity is required",
+                        min: { value: 0.01, message: "Quantity must be positive" },
+                      })}
+                      placeholder="Output Quantity (kg)"
+                    />
+                    {errors.outputProduct?.quantity && (
+                      <span className="error">{errors.outputProduct.quantity.message}</span>
+                    )}
+                  </div>
+                  <div>
+                    <input
+                      {...register("outputProduct.unitCost")}
+                      readOnly
+                      placeholder="Unit Cost (calculated)"
+                    />
+                  </div>
+                  <div>
+                    <input
+                      {...register("outputProduct.totalCost")}
+                      readOnly
+                      placeholder="Total Cost (calculated)"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <input 
+                    type="datetime-local" 
+                    {...register("startDate")} 
+                  />
+                </div>
+                <div>
+                  <select {...register("status")}>
                     <option value="Planned">Planned</option>
                     <option value="In Progress">In Progress</option>
                     <option value="Completed">Completed</option>
                     <option value="Cancelled">Cancelled</option>
                   </select>
-                  {errors.status && <span className="error">This field is required</span>}
                 </div>
-                
-                <div className="form-group">
-                  <label>Raw Materials</label>
-                  <div className="materials-container">
-                    <div className="available-materials">
-                      <h4>Available Materials</h4>
-                      <div className="material-list">
-                        {availableMaterials.map((materialGroup) => (
-                          <div key={materialGroup.p_id} className="material-item">
-                            <div>
-                              <strong>{materialGroup.p_name}</strong>
-                              <p>Available: {materialGroup.totalQuantity}</p>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => handleAddMaterial(materialGroup)}
-                            >
-                              Add
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                    
-                    <div className="selected-materials">
-                      <h4>Selected Materials</h4>
-                      <div className="material-list">
-                        {selectedMaterials.map((material, index) => (
-                          <div key={index} className="material-item">
-                            <div>
-                              <strong>{material.p_name}</strong>
-                              <p>Quantity: {material.quantityUsed}</p>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => handleRemoveMaterial(index)}
-                            >
-                              Remove
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
+                <div>
+                  <textarea
+                    {...register("notes")}
+                    placeholder="Notes"
+                  ></textarea>
                 </div>
-                
-                <div className="form-group">
-                  <label>Output Product</label>
-                  <div className="form-row">
-                    <div className="form-group">
-                      <label>Product ID</label>
-                      <input
-                        type="text"
-                        {...register("outputProduct.productId", { required: true })}
-                      />
-                      {errors.outputProduct?.productId && <span className="error">Required</span>}
-                    </div>
-                    
-                    <div className="form-group">
-                      <label>Product Name</label>
-                      <input
-                        type="text"
-                        {...register("outputProduct.productName", { required: true })}
-                      />
-                      {errors.outputProduct?.productName && <span className="error">Required</span>}
-                    </div>
-                  </div>
-                  
-                  <div className="form-row">
-                    <div className="form-group">
-                      <label>Quantity</label>
-                      <input
-                        type="number"
-                        step="0.01"
-                        {...register("outputProduct.quantity", { required: true, min: 0.01 })}
-                      />
-                      {errors.outputProduct?.quantity && <span className="error">Required</span>}
-                    </div>
-                    
-                    <div className="form-group">
-                      <label>Unit Cost (calculated)</label>
-                      <input
-                        type="number"
-                        step="0.01"
-                        readOnly
-                        {...register("outputProduct.unitCost")}
-                      />
-                    </div>
-                    
-                    <div className="form-group">
-                      <label>Total Cost (calculated)</label>
-                      <input
-                        type="number"
-                        step="0.01"
-                        readOnly
-                        {...register("outputProduct.totalCost")}
-                      />
-                    </div>
-                  </div>
-                </div>
-                
-                <div className="form-group">
-                  <label>Notes</label>
-                  <textarea {...register("notes")}></textarea>
-                </div>
-                
-                <div className="form-actions">
-                  <button type="button" onClick={() => {
-                    setIsFormOpen(false);
-                    setIsUpdating(false);
-                    setUpdateId(null);
-                    reset();
-                    setSelectedMaterials([]);
-                  }}>
-                    Cancel
+                <div className="buttons">
+                  <button type="submit" className="save-button">
+                    {isUpdating ? "Update" : "Add"}
                   </button>
-                  <button type="submit">
-                    {isUpdating ? "Update Production" : "Add Production"}
+                  <button
+                    type="button"
+                    className="cancel-button"
+                    onClick={() => {
+                      reset();
+                      setIsFormOpen(false);
+                      setSelectedMaterials([]);
+                    }}
+                  >
+                    Cancel
                   </button>
                 </div>
               </form>
             </div>
           </div>
         )}
-
-        {/* Productions Table */}
         <div className="table-container">
           <h3>Production List</h3>
           {loading ? (

@@ -1,32 +1,33 @@
-import React, { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
-import { fetchProductions, fetchStockItems, addCompletedProductionToStockOrders } from "../features/materialSlice";
-import { toast } from "react-toastify";
 import { useForm } from "react-hook-form";
+import axios from "axios";
 import "./SalesOrderManagement.css";
 
-const SalesOrderManagement = () => {
+// Create a function to create authenticated axios instance
+const createAuthAxios = () => {
+  const token = localStorage.getItem('token');
+  return axios.create({
+    headers: {
+      'Authorization': `Bearer ${token}`
+    }
+  });
+};
+
+export default function SalesOrderManagement() {
   const dispatch = useDispatch();
+  
+  // State for stocks and sales orders
+  const [stocks, setStocks] = useState([]);
+  const [salesOrders, setSalesOrders] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [completedProductions, setCompletedProductions] = useState([]);
-  const [showSalesOrderForm, setShowSalesOrderForm] = useState(false);
-  const [selectedProduction, setSelectedProduction] = useState(null);
   const [error, setError] = useState(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
   const [updateId, setUpdateId] = useState(null);
   const [searchDate, setSearchDate] = useState("");
-  const [buyers, setBuyers] = useState(() => {
-    const savedBuyers = localStorage.getItem('buyers');
-    return savedBuyers ? JSON.parse(savedBuyers) : {};
-  });
   
-  // Get stock items from Redux store
-  const stockItems = useSelector(state => state.material.stock);
-  const stockLoading = useSelector(state => state.material.loading);
-  const stockError = useSelector(state => state.material.error);
-
-  // Form handling with react-hook-form
+  // Form setup
   const {
     register,
     handleSubmit,
@@ -46,11 +47,10 @@ const SalesOrderManagement = () => {
       price: "",
       totalPrice: "",
       date: new Date().toISOString().slice(0, 16),
-      notes: "",
     },
   });
 
-  // Watch for quantity and price changes
+  // Watch for quantity and price changes to calculate total price
   const watchQuantity = watch("quantity");
   const watchPrice = watch("price");
 
@@ -61,263 +61,484 @@ const SalesOrderManagement = () => {
     }
   }, [watchQuantity, watchPrice, setValue]);
 
-  // Save to localStorage when buyers change
+  // State for storing buyer and product information
+  const [buyers, setBuyers] = useState(() => {
+    const savedBuyers = localStorage.getItem('buyers');
+    return savedBuyers ? JSON.parse(savedBuyers) : {};
+  });
+  
+  const [products, setProducts] = useState(() => {
+    const savedProducts = localStorage.getItem('salesProducts');
+    return savedProducts ? JSON.parse(savedProducts) : {};
+  });
+
+  // Save to localStorage when buyers or products change
   useEffect(() => {
     localStorage.setItem('buyers', JSON.stringify(buyers));
   }, [buyers]);
 
   useEffect(() => {
-    // Fetch completed productions
-    const fetchCompletedProductions = async () => {
+    localStorage.setItem('salesProducts', JSON.stringify(products));
+  }, [products]);
+
+  // Fetch stocks and sales orders on component mount
+  useEffect(() => {
+    const fetchData = async () => {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        console.error("No authentication token found");
+        window.location.href = '/login';
+        return;
+      }
+
       setLoading(true);
       try {
-        // Update this URL to match your server route
-        const response = await fetch("http://localhost:3000/api/production/getProductions", {
-          headers: {
-            Authorization: `Bearer ${localStorage.getItem('token')}`
-          }
-        });
-        const data = await response.json();
+        const authAxios = createAuthAxios();
         
-        if (data.success) {
-          // Filter only completed productions
-          const completed = data.data.filter(prod => prod.status === "Completed");
-          setCompletedProductions(completed);
-        } else {
-          setError(data.message || "Failed to fetch completed productions");
+        // Fetch stocks - fixed the double slash in URL
+        const stocksResponse = await authAxios.get('http://localhost:3000/api/product/getStockItems');
+        console.log("Stocks fetched:", stocksResponse.data);
+        
+        // Check if data exists and properly format it
+        if (stocksResponse.data) {
+          // If data is directly in the response
+          if (Array.isArray(stocksResponse.data)) {
+            setStocks(stocksResponse.data);
+          } 
+          // If data is nested in a data property
+          else if (stocksResponse.data.data && Array.isArray(stocksResponse.data.data)) {
+            setStocks(stocksResponse.data.data);
+          }
+          // If neither format works, try to extract data
+          else {
+            console.log("Unexpected data structure:", stocksResponse.data);
+            // Try to extract data from the response in a different way
+            const extractedData = Object.values(stocksResponse.data).filter(item => 
+              item && typeof item === 'object' && item.p_id
+            );
+            if (extractedData.length > 0) {
+              setStocks(extractedData);
+            }
+          }
         }
+        
+        // Fetch sales orders
+        const salesResponse = await authAxios.get('http://localhost:3000/api/salesOrder/getSalesOrders');
+        console.log("Sales orders fetched:", salesResponse.data);
+        
+        if (salesResponse.data && salesResponse.data.data) {
+          setSalesOrders(salesResponse.data.data);
+        }
+        
+        setError(null);
       } catch (err) {
-        setError(err.message || "An error occurred while fetching data");
-        console.error("Error fetching completed productions:", err);
+        console.error("Error fetching data:", err);
+        setError(err.response?.data || { message: err.message });
+        
+        if (err.response?.status === 401) {
+          window.location.href = '/login';
+        }
       } finally {
         setLoading(false);
       }
     };
 
-    fetchCompletedProductions();
-    
-    // Fetch stock items using Redux thunk
-    dispatch(fetchStockItems());
-  }, [dispatch]);
+    fetchData();
+  }, []);
 
-  const handleCreateSalesOrder = (item) => {
-    // Reset form first
-    reset();
+  // Handle ID changes to auto-fill form fields
+  const handleIdChange = (name, value) => {
+    if (name === "buyerId") {
+      if (buyers[value]) {
+        // Use data from localStorage
+        setValue("buyerName", buyers[value].buyerName);
+        setValue("buyerMobile", buyers[value].buyerMobile);
+        setValue("buyerAddress", buyers[value].buyerAddress);
+      } else {
+        // Check in existing salesOrders data
+        const existingBuyer = salesOrders.find(order => order.b_id === value);
+        if (existingBuyer) {
+          const buyerData = {
+            buyerName: existingBuyer.b_name,
+            buyerMobile: existingBuyer.ph_no,
+            buyerAddress: existingBuyer.address
+          };
+          setBuyers(prev => ({
+            ...prev,
+            [value]: buyerData
+          }));
+          setValue("buyerName", existingBuyer.b_name);
+          setValue("buyerMobile", existingBuyer.ph_no);
+          setValue("buyerAddress", existingBuyer.address);
+        }
+      }
+    }
     
-    // Set product details from the selected item
-    setValue("productId", item.productId);
-    setValue("productName", item.productName);
-    setValue("quantity", item.quantity);
-    setValue("price", item.unitCost || 0);
-    setValue("totalPrice", item.totalCost || (item.quantity * (item.unitCost || 0)));
-    setValue("date", new Date().toISOString().slice(0, 16));
-    
-    // Store the selected item for reference
-    setSelectedProduction(item);
-    setIsFormOpen(true);
-  };
-
-  // Handle buyer ID change to auto-fill buyer details
-  const handleBuyerIdChange = (value) => {
-    if (buyers[value]) {
-      // Use data from localStorage
-      setValue("buyerName", buyers[value].buyerName);
-      setValue("buyerMobile", buyers[value].buyerMobile);
-      setValue("buyerAddress", buyers[value].buyerAddress);
+    if (name === "productId") {
+      if (products[value]) {
+        // Use data from localStorage
+        setValue("productName", products[value].productName);
+        setValue("price", products[value].price);
+      } else {
+        // Check in existing stocks data
+        const existingProduct = stocks.find(stock => stock.p_id === value);
+        if (existingProduct) {
+          const productData = {
+            productName: existingProduct.p_name,
+            price: existingProduct.price
+          };
+          setProducts(prev => ({
+            ...prev,
+            [value]: productData
+          }));
+          setValue("productName", existingProduct.p_name);
+          setValue("price", existingProduct.price);
+        }
+      }
     }
   };
 
-  // Form submission handler
-  const onSubmit = (data) => {
-    // Make sure we have a valid token before submitting
+  // Handle form submission
+  const onSubmit = async (data) => {
     const token = localStorage.getItem('token');
     if (!token) {
       console.error("No authentication token found");
       window.location.href = '/login';
       return;
     }
-  
-    const salesOrder = {
-      buyerId: data.buyerId,
-      buyerName: data.buyerName,
-      buyerMobile: data.buyerMobile,
-      buyerAddress: data.buyerAddress,
-      productId: data.productId,
-      productName: data.productName,
+
+    const user = JSON.parse(localStorage.getItem('user') || '{}');
+    const companyId = user.companyId;
+    
+    if (!companyId) {
+      console.error("No company ID found");
+      return;
+    }
+
+    // Check if selected product has enough stock
+    const selectedProduct = stocks.find(stock => stock.p_id === data.productId);
+    if (!selectedProduct || selectedProduct.quantity < Number(data.quantity)) {
+      alert(`Not enough stock available. Current stock: ${selectedProduct ? selectedProduct.quantity : 0}`);
+      return;
+    }
+
+    const salesOrderData = {
+      b_id: data.buyerId,
+      b_name: data.buyerName,
+      ph_no: data.buyerMobile,
+      address: data.buyerAddress,
+      p_id: data.productId,
+      p_name: data.productName,
       quantity: Number(data.quantity),
       price: Number(data.price),
-      totalPrice: Number(data.totalPrice),
+      total_price: Number(data.totalPrice),
       date: data.date,
-      notes: data.notes,
-      status: "Pending",
-      productionId: selectedProduction._id || selectedProduction.productionId,
+      companyId
     };
-  
-    // Send the sales order to the server
-    fetch("http://localhost:3000/api/salesOrder/createSalesOrder", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${token}`
-      },
-      body: JSON.stringify(salesOrder)
-    })
-    .then(response => response.json())
-    .then(data => {
-      if (data.success) {
-        toast.success("Sales order created successfully!");
+
+    setLoading(true);
+    try {
+      const authAxios = createAuthAxios();
+      
+      if (isUpdating) {
+        // Update existing sales order
+        const response = await authAxios.put(
+          `http://localhost:3000/api/sales/updateSalesOrder/${updateId}`,
+          salesOrderData
+        );
         
-        // Save buyer data to localStorage
-        setBuyers(prev => ({
-          ...prev,
-          [salesOrder.buyerId]: {
-            buyerName: salesOrder.buyerName,
-            buyerMobile: salesOrder.buyerMobile,
-            buyerAddress: salesOrder.buyerAddress,
-          }
-        }));
+        console.log("Sales order updated successfully:", response.data);
         
-        // Close the form and reset
-        reset();
-        setIsFormOpen(false);
+        // Update local state
+        setSalesOrders(prev => 
+          prev.map(order => order._id === updateId ? response.data.data : order)
+        );
       } else {
-        toast.error(data.message || "Failed to create sales order");
+        // Add new sales order
+        const response = await authAxios.post(
+          'http://localhost:3000/api/sales/addSalesOrder',
+          salesOrderData
+        );
+        
+        console.log("Sales order added successfully:", response.data);
+        
+        // Update local state
+        setSalesOrders(prev => [...prev, response.data.data]);
       }
-    })
-    .catch(error => {
-      console.error("Error creating sales order:", error);
-      toast.error("An error occurred while creating the sales order");
-    });
+      
+      // Inside onSubmit function, update the stock refresh call
+      // Update stock quantity
+      await authAxios.post('http://localhost:3000/api/product/updateQuantity', {
+        p_id: data.productId,
+        quantity: -Number(data.quantity) // Negative to reduce stock
+      });
+      
+      // Refresh stocks data
+      const stocksResponse = await authAxios.get('http://localhost:3000/api/product/getStockItems');
+      if (stocksResponse.data && stocksResponse.data.data) {
+        setStocks(stocksResponse.data.data);
+      }
+      
+      // Save buyer and product data
+      setBuyers(prev => ({
+        ...prev,
+        [data.buyerId]: {
+          buyerName: data.buyerName,
+          buyerMobile: data.buyerMobile,
+          buyerAddress: data.buyerAddress,
+        }
+      }));
+
+      setProducts(prev => ({
+        ...prev,
+        [data.productId]: {
+          productName: data.productName,
+          price: data.price
+        }
+      }));
+      
+      // Reset form and close
+      reset();
+      setIsFormOpen(false);
+      setIsUpdating(false);
+      setUpdateId(null);
+      setError(null);
+      
+    } catch (err) {
+      console.error("Error saving sales order:", err);
+      setError(err.response?.data || { message: err.message });
+      
+      if (err.response?.status === 401) {
+        window.location.href = '/login';
+      }
+    } finally {
+      setLoading(false);
+    }
   };
 
-  // Filter stock items by date
-  const filteredStockItems = searchDate
-    ? stockItems.filter((item) => {
-        if (!item.date) return false;
+  // Handle edit
+  const handleEdit = (order) => {
+    setIsUpdating(true);
+    setUpdateId(order._id);
+    
+    // Set form values from the order object
+    setValue("buyerId", order.buyerId);
+    setValue("buyerName", order.buyerName);
+    setValue("buyerMobile", order.buyerMobile);
+    setValue("buyerAddress", order.buyerAddress);
+    setValue("productId", order.productId);
+    setValue("productName", order.productName);
+    setValue("quantity", order.quantity);
+    setValue("price", order.price);
+    setValue("totalPrice", order.totalPrice);
+    
+    // Format date for datetime-local input
+    if (order.date) {
+      try {
+        const dateObj = new Date(order.date);
+        if (!isNaN(dateObj.getTime())) {
+          // Format as YYYY-MM-DDThh:mm
+          const formattedDate = dateObj.toISOString().slice(0, 16);
+          setValue("date", formattedDate);
+        }
+      } catch (error) {
+        console.error("Error formatting date:", error);
+      }
+    }
+    
+    setIsFormOpen(true);
+  };
+
+  // Handle delete
+  const handleDelete = async (id) => {
+    const token = localStorage.getItem('token');
+    if (!token) {
+      console.error("No authentication token found");
+      window.location.href = '/login';
+      return;
+    }
+
+    if (!window.confirm("Are you sure you want to delete this sales order?")) {
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const authAxios = createAuthAxios();
+      await authAxios.delete(`http://localhost:3000/api/sales/deleteSalesOrder/${id}`);
+      
+      // Update local state
+      setSalesOrders(prev => prev.filter(order => order._id !== id));
+      
+      // Refresh stocks data
+      const stocksResponse = await authAxios.get('http://localhost:3000/api/stock/getStocks');
+      if (stocksResponse.data && stocksResponse.data.data) {
+        setStocks(stocksResponse.data.data);
+      }
+      
+    } catch (err) {
+      console.error("Error deleting sales order:", err);
+      setError(err.response?.data || { message: err.message });
+      
+      if (err.response?.status === 401) {
+        window.location.href = '/login';
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Filter sales orders by date
+  const filteredSalesOrders = searchDate
+    ? salesOrders.filter((order) => {
+        if (!order.date) return false;
         
         try {
           // Convert both dates to YYYY-MM-DD format for comparison
-          const itemDate = new Date(item.date);
-          if (isNaN(itemDate.getTime())) return false;
+          const orderDate = new Date(order.date);
+          if (isNaN(orderDate.getTime())) return false;
           
-          const formattedItemDate = itemDate.toISOString().split('T')[0];
-          return formattedItemDate === searchDate;
+          const itemDate = orderDate.toISOString().split('T')[0];
+          return itemDate === searchDate;
         } catch (error) {
           console.error("Date parsing error:", error);
           return false;
         }
       })
-    : stockItems;
+    : salesOrders;
 
+  // Calculate total sales
+  const totalSales = salesOrders.reduce((acc, order) => acc + Number(order.totalPrice || 0), 0);
   return (
-    <div className="sales-order-container">
-      <h2>Sales Order Management</h2>
-      
-      {/* Search & Filter Section */}
-      <div className="actions">
-        <input
-          type="date"
-          value={searchDate}
-          onChange={(e) => setSearchDate(e.target.value)}
-          placeholder="Filter by date"
-        />
-      </div>
-      
-      {/* Stock Items Section */}
-      <div className="stock-items-container">
-        <h3>Available Stock Items</h3>
-        {stockLoading ? (
-          <p>Loading stock items...</p>
-        ) : stockError ? (
-          <p className="error-message">{stockError.message || "Error loading stock items"}</p>
-        ) : filteredStockItems.length === 0 ? (
-          <p>No stock items available. Complete a production to add items to stock.</p>
-        ) : (
-          <div className="stock-items-grid">
-            {filteredStockItems.map((item) => (
-              <div key={item._id || item.id} className="stock-item-card">
-                <div className="stock-item-header">
-                  <h4>{item.productName}</h4>
-                  <span className="stock-badge">In Stock</span>
-                </div>
-                <div className="stock-item-details">
-                  <p><strong>Product ID:</strong> {item.productId}</p>
-                  <p><strong>Quantity:</strong> {item.quantity}</p>
-                  <p><strong>Unit Cost:</strong> ${parseFloat(item.unitCost || 0).toFixed(2)}</p>
-                  <p><strong>Total Value:</strong> ${parseFloat(item.totalCost || 0).toFixed(2)}</p>
-                  <p><strong>Source:</strong> {item.source}</p>
-                  <p><strong>Date Added:</strong> {new Date(item.date).toLocaleDateString()}</p>
-                </div>
-                <button 
-                  className="create-order-btn"
-                  onClick={() => handleCreateSalesOrder(item)}
-                >
-                  Create Sales Order
-                </button>
-              </div>
-            ))}
+    <>
+      <div className="container sales">
+        {/* Dashboard Section */}
+        <div className="dashboard">
+          <h2>Sales Dashboard</h2>
+          <div className="stock-overview">
+            <div className="stock-card">
+              <h3>Total Sales</h3>
+              <p>₹{totalSales.toFixed(2)}</p>
+            </div>
+            <div className="stock-card">
+              <h3>Total Orders</h3>
+              <p>{salesOrders.length}</p>
+            </div>
           </div>
-        )}
-      </div>
-      
-      {/* Completed Productions Section */}
-      <div className="completed-productions-container">
-        <h3>Completed Productions</h3>
-        {loading ? (
-          <p>Loading completed productions...</p>
-        ) : error ? (
-          <p className="error-message">{error}</p>
-        ) : completedProductions.length === 0 ? (
-          <p>No completed productions found. Complete a production to create a sales order.</p>
-        ) : (
-          <div className="completed-productions-grid">
-            {completedProductions.map((production) => (
-              <div key={production._id} className="production-card">
-                <div className="production-header">
-                  <h4>{production.productionName}</h4>
-                  <span className="status-badge completed">Completed</span>
-                </div>
-                <div className="production-details">
-                  <p><strong>ID:</strong> {production.productionId}</p>
-                  <p><strong>Completed Date:</strong> {new Date(production.endDate).toLocaleDateString()}</p>
-                  <p><strong>Product:</strong> {production.outputProduct?.productName}</p>
-                  <p><strong>Quantity:</strong> {production.outputProduct?.quantity}</p>
-                </div>
-                <button 
-                  className="create-order-btn"
-                  onClick={() => handleCreateSalesOrder({
-                    productId: production.outputProduct?.productId,
-                    productName: production.outputProduct?.productName,
-                    quantity: production.outputProduct?.quantity,
-                    unitCost: production.outputProduct?.unitCost,
-                    totalCost: production.outputProduct?.totalCost,
-                    _id: production._id
-                  })}
-                >
-                  Create Sales Order
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
+        </div>
 
-      {/* Popup Form for Sales Order */}
-      {isFormOpen && (
-        <div className="overlay">
-          <div className="form-popup">
-            <h3>Create Sales Order</h3>
-            <form onSubmit={handleSubmit(onSubmit)}>
-              {/* Buyer Information */}
-              <div className="form-section">
-                <h4>Buyer Information</h4>
+        {/* Products Section */}
+        <div className="products-section">
+          <h2>Available Products</h2>
+          <div className="products-grid">
+            {stocks.length > 0 ? (
+              stocks.map((stock, index) => (
+                <div className="product-card" key={stock._id || index}>
+                  <h3>{stock.p_name || "Product"}</h3>
+                  <div className="product-details">
+                    <p><strong>ID:</strong> {stock.productId || "-"}</p>
+                    <p><strong>Available:</strong> {stock.quantity ? Number(stock.quantity).toFixed(2) : '0'} Unit</p>
+                    <p><strong>Price:</strong> ₹{stock.unitCost? Number(stock.unitCost).toFixed(2) : '0'}/Unit</p>
+                  </div>
+                  <button 
+                    className="quick-add-btn"
+                    onClick={() => {
+                      setIsFormOpen(true);
+                      setValue("productId", stock.p_id || "");
+                      setValue("productName", stock.p_name || "");
+                      setValue("price", stock.price ? Number(stock.price) : 0);
+                      handleIdChange("productId", stock.p_id || "");
+                    }}
+                  >
+                    Quick Order
+                  </button>
+                </div>
+              ))
+            ) : (
+              <p className="no-products">No products available</p>
+            )}
+          </div>
+        </div>
+
+        {/* Search & Add Button */}
+        <div className="actions">
+          <input
+            type="date"
+            value={searchDate}
+            onChange={(e) => setSearchDate(e.target.value)}
+          />
+          <button 
+            className="refresh-button" 
+            onClick={async () => {
+              setLoading(true);
+              try {
+                const authAxios = createAuthAxios();
+                
+                // Refresh stocks - fixed the endpoint
+                const stocksResponse = await authAxios.get('http://localhost:3000/api/product/getStockItems');
+                console.log(stocksResponse.data, "stocksResponse");
+                
+                // Check if data exists and properly format it
+                if (stocksResponse.data) {
+                  // If data is directly in the response
+                  if (Array.isArray(stocksResponse.data)) {
+                    setStocks(stocksResponse.data);
+                  } 
+                  // If data is nested in a data property
+                  else if (stocksResponse.data.data && Array.isArray(stocksResponse.data.data)) {
+                    setStocks(stocksResponse.data.data);
+                  }
+                  // If neither format works, log the structure for debugging
+                  else {
+                    console.log("Unexpected data structure:", stocksResponse.data);
+                    // Try to extract data from the response in a different way
+                    const extractedData = Object.values(stocksResponse.data).filter(item => 
+                      item && typeof item === 'object' && item.p_id
+                    );
+                    if (extractedData.length > 0) {
+                      setStocks(extractedData);
+                    }
+                  }
+                }
+                
+                console.log("Processed stocks:", stocks);
+                console.log(stocks[0], "stocks");
+                // Refresh sales orders - updated to match the route in your server
+                const salesResponse = await authAxios.get('http://localhost:3000/api/salesOrder/getSalesOrders');
+                if (salesResponse.data && salesResponse.data.data) {
+                  setSalesOrders(salesResponse.data.data);
+                }
+                
+              } catch (err) {
+                console.error("Error refreshing data:", err);
+                if (err.response?.status === 401) {
+                  window.location.href = '/login';
+                }
+              } finally {
+                setLoading(false);
+              }
+            }}
+          >
+            ↻ Refresh
+          </button>
+          <button className="add-button" onClick={() => setIsFormOpen(true)}>
+            + Add Sales Order
+          </button>
+        </div>
+
+        {/* Popup Form */}
+        {isFormOpen && (
+          <div className="overlay">
+            <div className="form-popup">
+              <h3>{isUpdating ? "Update Sales Order" : "Add Sales Order"}</h3>
+              <form onSubmit={handleSubmit(onSubmit)}>
                 <div>
                   <input
                     {...register("buyerId", {
                       required: "Buyer ID is required",
                     })}
                     placeholder="Buyer ID"
-                    onChange={(e) => handleBuyerIdChange(e.target.value)}
+                    onChange={(e) => handleIdChange("buyerId", e.target.value)}
                   />
                   {errors.buyerId && (
                     <span className="error">{errors.buyerId.message}</span>
@@ -365,19 +586,21 @@ const SalesOrderManagement = () => {
                     </span>
                   )}
                 </div>
-              </div>
 
-              {/* Product Information */}
-              <div className="form-section">
-                <h4>Product Information</h4>
                 <div>
-                  <input
+                  <select
                     {...register("productId", {
-                      required: "Product ID is required",
+                      required: "Product is required",
                     })}
-                    placeholder="Product ID"
-                    readOnly
-                  />
+                    onChange={(e) => handleIdChange("productId", e.target.value)}
+                  >
+                    <option value="">Select Product</option>
+                    {stocks.map(stock => (
+                      <option key={stock._id} value={stock.p_id}>
+                        {stock.p_name} - Available: {stock.quantity.toFixed(2)} kg
+                      </option>
+                    ))}
+                  </select>
                   {errors.productId && (
                     <span className="error">{errors.productId.message}</span>
                   )}
@@ -399,15 +622,17 @@ const SalesOrderManagement = () => {
                 <div>
                   <input
                     type="number"
+                    step="0.01"
                     {...register("quantity", {
                       required: "Quantity is required",
                       min: { value: 0.01, message: "Quantity must be positive" },
-                      max: { 
-                        value: selectedProduction?.quantity || 9999, 
-                        message: "Cannot exceed available quantity" 
+                      validate: value => {
+                        const selectedProduct = stocks.find(stock => stock.p_id === watch("productId"));
+                        return !selectedProduct || Number(value) <= selectedProduct.quantity || 
+                          `Maximum available quantity is ${selectedProduct.quantity}`;
                       }
                     })}
-                    placeholder="Quantity"
+                    placeholder="Quantity (kg)"
                   />
                   {errors.quantity && (
                     <span className="error">{errors.quantity.message}</span>
@@ -420,9 +645,9 @@ const SalesOrderManagement = () => {
                     step="0.01"
                     {...register("price", {
                       required: "Price is required",
-                      min: { value: 0.01, message: "Price must be positive" },
+                      min: { value: 0, message: "Price must be positive" },
                     })}
-                    placeholder="Price per unit"
+                    placeholder="Price per kg"
                   />
                   {errors.price && (
                     <span className="error">{errors.price.message}</span>
@@ -444,36 +669,105 @@ const SalesOrderManagement = () => {
                   />
                 </div>
 
-                <div>
-                  <textarea
-                    {...register("notes")}
-                    placeholder="Additional Notes"
-                    rows="3"
-                  ></textarea>
+                <div className="buttons">
+                  <button type="submit" className="save-button">
+                    {isUpdating ? "Update" : "Add"}
+                  </button>
+                  <button
+                    type="button"
+                    className="cancel-button"
+                    onClick={() => {
+                      reset();
+                      setIsFormOpen(false);
+                      setIsUpdating(false);
+                      setUpdateId(null);
+                    }}
+                  >
+                    Cancel
+                  </button>
                 </div>
-              </div>
-
-              <div className="buttons">
-                <button type="submit" className="save-button">
-                  Create Order
-                </button>
-                <button
-                  type="button"
-                  className="cancel-button"
-                  onClick={() => {
-                    reset();
-                    setIsFormOpen(false);
-                  }}
-                >
-                  Cancel
-                </button>
-              </div>
-            </form>
+              </form>
+            </div>
           </div>
-        </div>
-      )}
-    </div>
-  );
-};
+        )}
 
-export default SalesOrderManagement;
+        {/* Data Table */}
+        <div className="show">
+          {loading ? (
+            <div className="loading">Loading...</div>
+          ) : error ? (
+            <div className="error-message">Error: {error.message}</div>
+          ) : (
+            <table>
+              <thead>
+                <tr>
+                  <th>Buyer ID</th>
+                  <th>Buyer Name</th>
+                  <th>Mobile No</th>
+                  <th>Address</th>
+                  <th>Product ID</th>
+                  <th>Product Name</th>
+                  <th>Quantity</th>
+                  <th>Price</th>
+                  <th>Total Price</th>
+                  <th>Date</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredSalesOrders && filteredSalesOrders.length > 0 ? (
+                  filteredSalesOrders.map((order) => (
+                    <tr key={order._id}>
+                      <td>{order.buyerId || '-'}</td>
+                      <td>{order.buyerName || '-'}</td>
+                      <td>{order.buyerMobile || '-'}</td>
+                      <td>{order.buyerMobile || '-'}</td>
+                      <td>{order.productId || '-'}</td>
+                      <td>{order.productName || '-'}</td>
+                      <td>{order.quantity ? order.quantity.toFixed(2) : '0'}</td>
+                      <td>{order.price ? order.price.toFixed(2) : '0'}</td>
+                      <td>{order.totalPrice ? order.totalPrice.toFixed(2) : '0'}</td>
+                      <td>{order.date ? new Date(order.date).toLocaleString() : '-'}</td>
+                      <td className="edt-btn">
+                        <button
+                          className="edit-btn"
+                          onClick={() =>
+                            handleEdit({
+                              buyerId: order.b_id,
+                              buyerName: order.b_name,
+                              buyerMobile: order.ph_no,
+                              buyerAddress: order.address,
+                              productId: order.p_id,
+                              productName: order.p_name,
+                              quantity: order.quantity,
+                              price: order.price,
+                              totalPrice: order.total_price,
+                              date: order.date,
+                              _id: order._id,
+                            })
+                          }
+                        >
+                          Edit
+                        </button>
+                        <button
+                          className="delete-btn"
+                          onClick={() => handleDelete(order._id)}
+                        >
+                          Delete
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan="10" className="no-data">No sales orders found</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
+    </>
+  );
+}

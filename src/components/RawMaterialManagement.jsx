@@ -307,6 +307,39 @@ export default function RawMaterialManagement() {
     }));
   };
 
+  // Handle edit
+  const handleEdit = (material) => {
+    setIsUpdating(true);
+    setUpdateIndex(material._id);
+    
+    // Set form values from the material object
+    setValue("sellerId", material.sellerId);
+    setValue("sellerName", material.sellerName);
+    setValue("sellerMobile", material.sellerMobile);
+    setValue("sellerAddress", material.sellerAddress);
+    setValue("productId", material.productId);
+    setValue("productName", material.productName);
+    setValue("quantity", material.quantity);
+    setValue("price", material.price);
+    setValue("totalPrice", material.totalPrice);
+    
+    // Format date for datetime-local input
+    if (material.date) {
+      try {
+        const dateObj = new Date(material.date);
+        if (!isNaN(dateObj.getTime())) {
+          // Format as YYYY-MM-DDThh:mm
+          const formattedDate = dateObj.toISOString().slice(0, 16);
+          setValue("date", formattedDate);
+        }
+      } catch (error) {
+        console.error("Error formatting date:", error);
+      }
+    }
+    
+    setIsFormOpen(true);
+  };
+
   // Handle delete
   const handleDelete = (id) => {
     // Check for token before deleting
@@ -378,13 +411,13 @@ export default function RawMaterialManagement() {
   // Rest of the component remains the same
   return (
     <>
-      <div className="container">
+      <div className="container raw">
         {/* Dashboard Section */}
         <div className="dashboard">
           <h2>Inventory Dashboard</h2>
           <div className="stock-overview">
             {Object.entries(totalStock).map(([product, data]) => (
-              <div className="stock-card" key={product}>
+              <div className="stock-card " key={product}>
                 <h3>{product}</h3>
                 <p>{data.total.toFixed(2)} {data.unit}</p>
               </div>
