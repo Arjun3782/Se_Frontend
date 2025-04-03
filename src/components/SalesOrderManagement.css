@@ -117,7 +117,7 @@
   border-radius: 8px;
   padding: 20px;
   width: 90%;
-  max-width: 500px;
+  max-width: 600px;
   max-height: 90vh;
   overflow-y: auto;
   box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
@@ -142,7 +142,7 @@
   border: 1px solid #ddd;
   border-radius: 4px;
   font-size: 14px;
-  width: 100%;
+  width: 97%;
 }
 
 .form-popup input[readonly] {

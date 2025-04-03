@@ -13,20 +13,26 @@ import { createSelector } from '@reduxjs/toolkit';
 
 // Create memoized selectors - Fix the identity function issue
 const selectRawMaterialState = state => {
-  // The API response structure shows that rawMaterial itself is the response object
-  // and r_data is the array of materials inside it
   const rawData = state.material.rawMaterial;
   console.log("Raw material state in selector:", rawData);
   
   // Check if the response is stored directly in the state
   if (rawData && typeof rawData === 'object') {
+    // If the response has originalResponse property with r_data inside
+    if (rawData.originalResponse && rawData.originalResponse.r_data) {
+      return rawData.originalResponse.r_data;
+    }
     // If the response has r_data property, use that
-    if (rawData.r_data && Array.isArray(rawData.r_data)) {
+    else if (rawData.r_data && Array.isArray(rawData.r_data)) {
       return rawData.r_data;
     }
-    // If the response itself is the data array
+    // If the response itself is an array
     else if (Array.isArray(rawData)) {
       return rawData;
+    }
+    // If the response is an object with a data property (common API pattern)
+    else if (rawData.data && Array.isArray(rawData.data)) {
+      return rawData.data;
     }
   }
   
@@ -60,11 +66,6 @@ export default function RawMaterialManagement() {
   const loading = useSelector(selectLoading);
   const error = useSelector(selectError);
   
-  // Add this debugging
-  console.log("Raw material from Redux state:", rawMaterial);
-  console.log("Local raw materials:", localRawMaterials);
-  console.log("Redux state loading:", loading);
-  console.log("Redux state error:", error);
   
   // Add error handling for authentication issues
   // Modify this error handling effect
@@ -92,19 +93,29 @@ export default function RawMaterialManagement() {
         .unwrap()
         .then(response => {
           console.log("Raw materials fetched successfully:", response);
-          // If we have r_data in the response but it's not being properly stored in Redux
-          if (response && response.r_data && Array.isArray(response.r_data)) {
-            console.log("Using r_data from response:", response.r_data);
-            // Store the data in local state
-            setLocalRawMaterials(response.r_data);
+          // Handle different response structures
+          if (response) {
+            if (response.originalResponse && response.originalResponse.r_data) {
+              console.log("Using originalResponse.r_data from response:", response.originalResponse.r_data);
+              setLocalRawMaterials(response.originalResponse.r_data);
+            } else if (response.r_data && Array.isArray(response.r_data)) {
+              console.log("Using r_data from response:", response.r_data);
+              setLocalRawMaterials(response.r_data);
+            } else if (Array.isArray(response)) {
+              console.log("Response is an array:", response);
+              setLocalRawMaterials(response);
+            } else if (response.data && Array.isArray(response.data)) {
+              console.log("Using data from response:", response.data);
+              setLocalRawMaterials(response.data);
+            } else {
+              console.log("Response structure not recognized:", response);
+            }
           }
         })
         .catch(error => {
           console.error("Error fetching raw materials:", error);
-          // Don't redirect here, let the error effect handle it
         });
     } else {
-      // Redirect to login if no token
       console.log("No token found, redirecting to login");
       window.location.href = '/login';
     }
@@ -391,9 +402,7 @@ export default function RawMaterialManagement() {
         }
       })
     : materialsToUse;
-  
-  // Add debugging to see what's in the filtered materials
-  console.log("Filtered materials:", filteredMaterials);
+
   
   // Calculate total stock
   const totalStock = materialsToUse.reduce((acc, mat) => {
@@ -412,6 +421,13 @@ export default function RawMaterialManagement() {
   return (
     <>
       <div className="container raw">
+        {/* Add debugging info */}
+        {loading && <div className="loading">Loading materials...</div>}
+        {error && <div className="error-message">Error: {error.message || JSON.stringify(error)}</div>}
+        {!loading && !error && materialsToUse.length === 0 && (
+          <div className="no-data">No raw materials found. Please add some materials.</div>
+        )}
+        
         {/* Dashboard Section */}
         <div className="dashboard">
           <h2>Inventory Dashboard</h2>

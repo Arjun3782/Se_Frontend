@@ -158,43 +158,79 @@ export const updateRawMaterial = createAsyncThunk(
   }
 );
 
-// In your fetchRawMaterial thunk
+// Add this fetchRawMaterial thunk
+// Make sure your fetchRawMaterial action in materialSlice.js is properly implemented
 export const fetchRawMaterial = createAsyncThunk(
   "material/fetchRawMaterial",
   async (_, { rejectWithValue }) => {
     try {
       const token = localStorage.getItem("token");
-      
       if (!token) {
-        console.error("No authentication token found");
         return rejectWithValue({ message: "Authentication token missing" });
       }
       
-      // Make sure we're sending the token in the correct format
+      // Ensure token is properly formatted
       const authToken = token.startsWith('Bearer ') ? token : `Bearer ${token}`;
       
-      console.log("Fetching raw materials with token");
+      console.log("Fetching raw materials with token:", authToken.substring(0, 15) + "...");
+      
       const response = await axios.get(
         "http://localhost:3000/api/rawMaterial/getRawMaterial",
         {
-          headers: { 
+          headers: {
             Authorization: authToken,
             'Content-Type': 'application/json'
           }
         }
       );
       
-      console.log("Raw materials fetched successfully");
-      return response.data;
-    } catch (error) {
-      console.error("Error fetching raw materials:", error);
+      console.log("Raw materials fetch response:", response.data);
       
-      // Don't include authentication error logic here
-      // Just return the error for the component to handle
-      return rejectWithValue(error.response?.data || { 
-        message: error.message,
-        status: error.response?.status
-      });
+      // Return the data in a consistent format
+      return {
+        r_data: response.data.data || [],
+        data: response.data.data || [],
+        // Include the original response for debugging
+        originalResponse: response.data
+      };
+    } catch (error) {
+      console.error("Error fetching raw materials:", error.response?.data || error.message);
+      
+      // Check for token expiration
+      if (error.response?.status === 401) {
+        console.log("Token expired, attempting to refresh...");
+        try {
+          // Try to refresh the token
+          await refreshToken();
+          
+          // Retry the request with the new token
+          const newToken = localStorage.getItem("token");
+          if (newToken) {
+            const authToken = newToken.startsWith('Bearer ') ? newToken : `Bearer ${newToken}`;
+            
+            const retryResponse = await axios.get(
+              "http://localhost:3000/api/rawMaterial/getRawMaterial",
+              {
+                headers: {
+                  Authorization: authToken,
+                  'Content-Type': 'application/json'
+                }
+              }
+            );
+            
+            return {
+              r_data: retryResponse.data.data || [],
+              data: retryResponse.data.data || []
+            };
+          }
+        } catch (refreshError) {
+          console.error("Token refresh failed:", refreshError);
+          // If refresh fails, redirect to login
+          window.location.href = '/login';
+        }
+      }
+      
+      return rejectWithValue(error.response?.data || { error: error.message });
     }
   }
 );
@@ -571,7 +607,17 @@ const materialSlice = createSlice({
       state.loading = false;
       state.error = action.payload;
     });
-    
+    builder.addCase(fetchProductions.pending, (state) => {
+      state.loading = true;
+    });
+    builder.addCase(fetchProductions.fulfilled, (state, action) => {
+      state.loading = false;
+      state.productions = action.payload;
+    });
+    builder.addCase(fetchProductions.rejected, (state, action) => {
+      state.loading = false;
+      state.error = action.payload;
+    });
     // Handle the addCompletedProductionToStock action
     builder.addCase(addCompletedProductionToStock.pending, (state) => {
       state.loading = true;
@@ -602,6 +648,42 @@ const materialSlice = createSlice({
       state.loading = false;
       state.error = action.payload;
     });
+    // fetchRawMaterial
+    builder.addCase(fetchRawMaterial.pending, (state) => {
+      state.loading = true;
+      state.error = null;
+    });
+    builder.addCase(fetchRawMaterial.fulfilled, (state, action) => {
+      state.loading = false;
+      
+      // Store data in multiple formats to ensure compatibility with different selectors
+      if (action.payload) {
+        state.rawMaterial = action.payload;
+        
+        if (action.payload.r_data) {
+          state.r_data = action.payload.r_data;
+        }
+        
+        if (action.payload.data) {
+          state.data = action.payload.data;
+        }
+      }
+    });
+    builder.addCase(fetchRawMaterial.rejected, (state, action) => {
+      state.loading = false;
+      state.error = action.payload || { error: "Failed to fetch raw materials" };
+    });
+    // builder.addCase(fetchStockItems.pending, (state) => {
+    //   state.loading = true;
+    // });
+    // builder.addCase(fetchStockItems.fulfilled, (state, action) => {
+    //   state.loading = false;
+    //   state.stock = action.payload;
+    // });
+    // builder.addCase(fetchStockItems.rejected, (state, action) => {
+    //   state.loading = false;
+    //   state.error = action.payload;
+    // });
     // ... other cases
   }
 });
@@ -613,8 +695,4 @@ export const {
   addCompletedProductionToStockOrders,
   clearCompletedProduction 
 } = materialSlice.actions;
-
-
-// Then add the corresponding case in the extraReducers section
-// Inside the extraReducers builder
 

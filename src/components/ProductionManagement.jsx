@@ -8,6 +8,7 @@ import {
 import { useForm } from "react-hook-form";
 import axios from "axios";
 import "./ProductionManagement.css";
+
 const createAuthAxios = () => {
   const token = localStorage.getItem('token');
   return axios.create({
@@ -18,8 +19,12 @@ const createAuthAxios = () => {
     }
   });
 };
+
 export default function ProductionManagement() {
   const dispatch = useDispatch();
+  const [selectedProduction, setSelectedProduction] = useState(null);
+  const [showSalesOrderForm, setShowSalesOrderForm] = useState(false);
+  
   useEffect(() => {
     const token = localStorage.getItem('token');
     if (token) {
@@ -29,21 +34,34 @@ export default function ProductionManagement() {
       delete axios.defaults.headers.common['Authorization'];
     };
   }, []);
-  const rawMaterials = useSelector(state => state.material.rawMaterial || []);
-  console.log('test',rawMaterials);
+  
+  const rawMaterials = useSelector(state => {
+    if (state.material && state.material.rawMaterial && state.material.rawMaterial.originalResponse) {
+      return state.material.rawMaterial.originalResponse.r_data || [];
+    } else if (state.material && state.material.rawMaterial) {
+      return state.material.rawMaterial;
+    } else if (state.material && state.material.data) {
+      return state.material.data;
+    } else if (state.material && state.material.r_data) {
+      return state.material.r_data;
+    } else {
+      return [];
+    }
+  });
+  
   const materialLoading = useSelector(state => state.material.loading);
   const materialError = useSelector(state => state.material.error);
   const [productions, setProductions] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [showSalesOrderForm, setShowSalesOrderForm] = useState(false);
-  const [selectedProduction, setSelectedProduction] = useState(null);
+  
   useEffect(() => {
     if (materialError && materialError.message === "Authentication token missing") {
       console.log("Authentication error detected, redirecting to login");
       window.location.href = '/login';
     }
   }, [materialError]);
+  
   const fetchProductions = async () => {
     setLoading(true);
     try {
@@ -68,6 +86,7 @@ export default function ProductionManagement() {
       setLoading(false);
     }
   };
+  
   const updateStatus = async (id, newStatus) => {
     try {
       const production = productions.find(p => p._id === id);
@@ -75,12 +94,10 @@ export default function ProductionManagement() {
       console.log("Before update API call - token:", localStorage.getItem('token').substring(0, 10) + "...");
       const updatedData = { status: newStatus };
       
-      // Add end date only if status is being set to Completed
       if (newStatus === "Completed") {
         updatedData.endDate = new Date();
       }
       
-      // Update the production status with a single API call
       const updatedProduction = await authAxios.put(
         `/api/production/updateProduction/${id}`,
         updatedData
@@ -88,22 +105,17 @@ export default function ProductionManagement() {
       
       console.log("After update API call - token:", localStorage.getItem('token').substring(0, 10) + "...");
       
-      // Update local state - FIX: using updatedProduction instead of response
       setProductions(prev => 
         prev.map(prod => prod._id === id ? updatedProduction.data.data : prod)
       );
       setError(null);
       
-      // If status is completed, set end date to now and show sales order form
       if (newStatus === "Completed") {
-        // Get the updated production data
         const completedProduction = updatedProduction.data.data || production;
         
         console.log("Before addCompletedProduction API call - token:", localStorage.getItem('token').substring(0, 10) + "...");
         
-        // Store completed production in products database
         try {
-          // Use the SAME authAxios instance for consistency
           await authAxios.post(
             "/api/product/addCompletedProduction",
             { production: completedProduction }
@@ -114,7 +126,6 @@ export default function ProductionManagement() {
         } catch (err) {
           console.error("Failed to add production to products:", err);
           
-          // Proper error handling for axios errors
           if (err.response && err.response.status === 401) {
             alert("Your session has expired. Please login again.");
             localStorage.removeItem('token');
@@ -127,7 +138,6 @@ export default function ProductionManagement() {
         setShowSalesOrderForm(true);
       }
       
-      // Return the updated production data
       return updatedProduction.data;
     } catch (err) {
       console.error("Error updating production:", err.response?.data || err.message);
@@ -140,17 +150,26 @@ export default function ProductionManagement() {
       setLoading(false);
     }
   };
+  
   useEffect(() => {
     const token = localStorage.getItem('token');
     if (token) {
       fetchProductions();
+      
+      console.log("Dispatching fetchRawMaterial action");
+      
+      axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+      
       dispatch(fetchRawMaterial())
         .unwrap()
         .then(response => {
-          console.log("Initial raw materials fetch successful:", response);
-          // If response is empty but should have data, try fetching again after a short delay
-          if ((!response || (Array.isArray(response) && response.length === 0)) && 
-              (!response.r_data || (Array.isArray(response.r_data) && response.r_data.length === 0))) {
+          console.log("Raw materials fetch successful:", response);
+          
+          if (response && (response.r_data || response.data)) {
+            console.log("Raw materials data received:", response.r_data || response.data);
+          } else {
+            console.warn("Raw materials response is missing expected data structure");
+            
             setTimeout(() => {
               console.log("Retrying raw materials fetch...");
               dispatch(fetchRawMaterial());
@@ -158,13 +177,18 @@ export default function ProductionManagement() {
           }
         })
         .catch(error => {
-          console.error("Error in initial raw materials fetch:", error);
+          console.error("Error in raw materials fetch:", error);
+          
+          setTimeout(() => {
+            console.log("Retrying raw materials fetch after error...");
+            dispatch(fetchRawMaterial());
+          }, 2000);
         });
     } else {
-      // Redirect to login if no token
       window.location.href = '/login';
     }
   }, [dispatch]);
+  
   const {
     register,
     handleSubmit,
@@ -189,6 +213,7 @@ export default function ProductionManagement() {
       notes: "",
     },
   });
+  
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
   const [updateId, setUpdateId] = useState(null);
@@ -197,6 +222,7 @@ export default function ProductionManagement() {
   const [availableMaterials, setAvailableMaterials] = useState([]);
   const watchMaterials = watch("materials");
   const watchOutputQuantity = watch("outputProduct.quantity");
+  
   useEffect(() => {
     console.log("Raw materials from Redux:", rawMaterials);
     if (!rawMaterials) {
@@ -204,10 +230,7 @@ export default function ProductionManagement() {
       setAvailableMaterials([]);
       return;
     }
-    
     let materialsToProcess = [];
-    
-    // Handle the specific structure we see in the console
     if (rawMaterials && rawMaterials.r_data && Array.isArray(rawMaterials.r_data)) {
       console.log("Processing r_data array with length:", rawMaterials.r_data.length);
       materialsToProcess = rawMaterials.r_data;
@@ -223,24 +246,23 @@ export default function ProductionManagement() {
       setAvailableMaterials([]);
       return;
     }
-    
+    const materialsJSON = JSON.stringify(materialsToProcess);
+    if (materialsJSON === JSON.stringify(availableMaterials.flatMap(m => m.materials || []))) {
+      console.log("Materials haven't changed, skipping processing");
+      return;
+    }
     if (materialsToProcess.length === 0) {
       console.log("No materials to process (empty array)");
       setAvailableMaterials([]);
       return;
     }
-    
     console.log("First material item:", materialsToProcess[0]);
-    
     try {
-      // Group materials by product ID
       const groupedMaterials = materialsToProcess.reduce((acc, material) => {
         if (!material) {
           console.log("Material is null or undefined");
           return acc;
         }
-        
-        // Make sure we have a p_id
         const productId = material.p_id || material._id;
         if (!productId) {
           console.log("Material missing product ID:", material);
@@ -272,6 +294,7 @@ export default function ProductionManagement() {
       setAvailableMaterials([]);
     }
   }, [rawMaterials]);
+  
   useEffect(() => {
     if (selectedMaterials.length > 0 && watchOutputQuantity) {
       const totalMaterialCost = selectedMaterials.reduce(
@@ -282,13 +305,9 @@ export default function ProductionManagement() {
       setValue("outputProduct.totalCost", totalMaterialCost.toFixed(2));
     }
   }, [selectedMaterials, watchOutputQuantity, setValue]);
-  // Add these handler functions
-  // Modify the handleAddMaterial function to properly handle the material data
   const handleAddMaterial = (materialGroup) => {
-    // Create a proper dialog instead of using prompt
     const dialog = document.createElement("dialog");
-    dialog.className = "material-dialog";
-    
+    dialog.className = "material-dialog";  
     dialog.innerHTML = `
       <h3>Add ${materialGroup.p_name}</h3>
       <p>Available: ${materialGroup.totalQuantity.toFixed(2)} kg</p>
@@ -298,24 +317,25 @@ export default function ProductionManagement() {
         <button id="add-btn">Add</button>
       </div>
     `;
-    
     document.body.appendChild(dialog);
     dialog.showModal();
-    
     document.getElementById("add-btn").addEventListener("click", () => {
       const quantityInput = document.getElementById("quantity-input");
       const quantity = parseFloat(quantityInput.value);
-      
       if (quantity > 0 && quantity <= materialGroup.totalQuantity) {
-        // Create a material object with all necessary properties
+        console.log("Adding material to selection:", {
+          materialGroup,
+          quantity,
+          firstMaterial: materialGroup.materials[0]
+        });
         setSelectedMaterials(prev => [
           ...prev, 
           {
             p_id: materialGroup.p_id,
             p_name: materialGroup.p_name,
             quantityUsed: quantity,
-            price: materialGroup.materials[0]?.price || 0, // Add price for cost calculation
-            materialId: materialGroup.materials[0]?._id // Add materialId for API calls
+            price: materialGroup.price || materialGroup.materials[0]?.price || 0,
+            materialId: materialGroup.materials[0]?._id || materialGroup.p_id
           }
         ]);
       }
@@ -332,6 +352,7 @@ export default function ProductionManagement() {
   const handleRemoveMaterial = (index) => {
     setSelectedMaterials(prev => prev.filter((_, i) => i !== index));
   };
+  
   const addProduction = async (productionData) => {
     setLoading(true);
     try {
@@ -353,6 +374,7 @@ export default function ProductionManagement() {
       setLoading(false);
     }
   };
+  
   const updateProductionById = async (id, productionData) => {
     setLoading(true);
     try {
@@ -376,6 +398,7 @@ export default function ProductionManagement() {
       setLoading(false);
     }
   };
+  
   const deleteProductionById = async (id) => {
     setLoading(true);
     try {
@@ -402,19 +425,20 @@ export default function ProductionManagement() {
     }
     const user = JSON.parse(localStorage.getItem('user') || '{}');
     const companyId = user.companyId;
-    
     if (!companyId) {
       console.error("No company ID found");
       return;
     }
-    
-    // Check if materials have been selected
     if (selectedMaterials.length === 0) {
       alert("Please select at least one raw material for this production");
       return;
     }
-    
-    // Check if productionId already exists (for new productions)
+    try {
+      await dispatch(fetchRawMaterial()).unwrap();
+      console.log("Raw materials refreshed before submission");
+    } catch (error) {
+      console.error("Failed to refresh raw materials:", error);
+    }
     if (!isUpdating) {
       const existingProduction = productions.find(p => p.productionId === data.productionId);
       if (existingProduction) {
@@ -426,16 +450,38 @@ export default function ProductionManagement() {
       ...data,
       materials: selectedMaterials,
       companyId
-    };    
+    };
     try {
-      const authAxios = createAuthAxios();
-      const materialsToUpdate = selectedMaterials.map(material => ({
-        materialId: material.materialId,
-        quantityUsed: material.quantityUsed
+      console.log("Selected materials to submit:", selectedMaterials);
+      console.log("Available materials according to frontend:", availableMaterials);
+      for (const material of selectedMaterials) {
+        const availableMaterial = availableMaterials.find(m => m.p_id === material.p_id);
+        console.log(`Checking material ${material.p_name}:`, {
+          required: material.quantityUsed,
+          available: availableMaterial ? availableMaterial.totalQuantity : 0,
+          materialId: material.materialId || material.p_id,
+          p_id: material.p_id
+        });
+        const requiredQty = parseFloat(material.quantityUsed);
+        const availableQty = availableMaterial ? parseFloat(availableMaterial.totalQuantity) : 0;
+        console.log('test',availableQty);
+        if (!availableMaterial || availableQty < requiredQty) {
+          alert(`Error: Insufficient quantity available for ${material.p_name}. 
+                 Available: ${availableQty.toFixed(2)} kg, 
+                 Required: ${requiredQty.toFixed(2)} kg`);
+          return;
+        }
+      }
+      const materialsWithIds = selectedMaterials.map(material => ({
+        ...material,
+        materialId: material.materialId || material.p_id, // Use p_id as fallback
+        p_id: material.p_id
       }));
-      await authAxios.post('/api/rawmaterial/updateQuantities', {
-        materials: materialsToUpdate
-      });
+      const productionData = {
+        ...data,
+        materials: materialsWithIds,
+        companyId
+      };
       if (isUpdating) {
         await updateProductionById(updateId, productionData);
         setIsUpdating(false);
@@ -455,15 +501,20 @@ export default function ProductionManagement() {
       }
     } catch (error) {
       console.error("Failed to save production:", error);
-      if (error.response?.data?.error?.includes('duplicate key error')) {
+      if (error.response?.status === 404) {
+        alert("Error: The server endpoint for this operation doesn't exist. Please contact your administrator.");
+      } else if (error.response?.data?.error?.includes('duplicate key error')) {
         alert(`Production ID "${data.productionId}" already exists. Please use a different ID.`);
       } else if (error.response?.data?.error?.includes('insufficient quantity')) {
-        alert(`Error: Some materials no longer have sufficient quantity available. Please refresh and try again.`);
+        alert(`Error: Some materials no longer have sufficient quantity available according to the server. 
+               Please click "Refresh Data" and try again.`);
+        dispatch(fetchRawMaterial());
       } else {
         alert(`Error: ${error.response?.data?.error || "Failed to save production. Please try again."}`);
       }
     }
   };
+  
   const handleEdit = (production) => {
     setSelectedMaterials(production.materials || []);
     reset({
@@ -485,6 +536,7 @@ export default function ProductionManagement() {
     setUpdateId(production._id);
     setIsFormOpen(true);
   };
+  
   const handleDelete = async (id) => {
     const token = localStorage.getItem('token');
     if (!token) {
@@ -502,6 +554,7 @@ export default function ProductionManagement() {
       }
     }
   };
+  
   const handleStatusChange = (id, currentStatus) => {
     const statusOptions = ["Planned", "In Progress", "Completed", "Cancelled"];
     const dialog = document.createElement("dialog");
@@ -546,35 +599,24 @@ export default function ProductionManagement() {
               updatedData.endDate = new Date();
             }
             console.log("Using token:", token.substring(0, 10) + "...");
-            
-            // Use the same authAxios instance for all calls
             const updatedProduction = await authAxios.put(
               `/api/production/updateProduction/${id}`,
               updatedData
             );
-            
             console.log("After update API call - token:", token.substring(0, 10) + "...");
-            
-            // Update local state
             setProductions(prev => 
               prev.map(prod => prod._id === id ? updatedProduction.data.data : prod)
             );
-            
-            // If status is completed, handle the completed production
             if (newStatus === "Completed") {
               const completedProduction = updatedProduction.data.data || production;
-              
               console.log("Dispatching completed production to stock");
               console.log("Completed production data:", completedProduction);
-              
-              // Check if outputProduct exists and has all required properties before dispatching
               if (completedProduction && 
                   completedProduction.outputProduct && 
                   completedProduction.outputProduct.productId && 
                   completedProduction.outputProduct.productName && 
                   completedProduction.outputProduct.quantity) {
                 console.log("product_id",completedProduction.outputProduct.productId);
-                // When dispatching the action
                 dispatch(addCompletedProductionToStock({
                   productId: completedProduction.outputProduct.productId,
                   productName: completedProduction.outputProduct.productName,
@@ -582,14 +624,9 @@ export default function ProductionManagement() {
                   unitCost: completedProduction.outputProduct.unitCost,
                   totalCost: completedProduction.outputProduct.totalCost,
                   productionId: completedProduction._id,
-                  // Don't include date here, let the thunk create it as an ISO string
                   notes: `Produced from production ${completedProduction.productionName}`
                 }));
-                
-                // Also dispatch to add to stock orders for UI state
                 dispatch(addCompletedProductionToStockOrders(completedProduction));
-                
-                // Update UI state
                 setSelectedProduction(completedProduction);
                 setShowSalesOrderForm(true);
               } else {
@@ -597,7 +634,6 @@ export default function ProductionManagement() {
                 alert("Cannot complete production: Missing output product information. Please edit the production to add output product details.");
               }
             }
-            
           } catch (error) {
             console.error("Failed to update status:", error);
             
@@ -606,18 +642,15 @@ export default function ProductionManagement() {
               localStorage.removeItem('token');
               window.location.href = '/login';
             } else {
-              // Show a more specific error message
               alert(`Failed to update production: ${error.response?.data?.message || error.message}`);
             }
           } finally {
-            // Always clean up dialog in finally block to ensure it happens
             if (document.body.contains(dialog)) {
               dialog.close();
               document.body.removeChild(dialog);
             }
           }
         } else {
-          // If status didn't change, just close the dialog
           if (document.body.contains(dialog)) {
             dialog.close();
             document.body.removeChild(dialog);
@@ -625,7 +658,6 @@ export default function ProductionManagement() {
         }
       });
     });
-    
     document.getElementById("cancel-btn").addEventListener("click", () => {
       if (document.body.contains(dialog)) {
         dialog.close();
@@ -634,13 +666,10 @@ export default function ProductionManagement() {
     });
   };
   
-  // Filter productions by date
   const filteredProductions = searchDate
     ? productions.filter((prod) => {
         if (!prod.startDate) return false;
-        
         try {
-          // Convert both dates to YYYY-MM-DD format for comparison
           const prodDate = new Date(prod.startDate);
           if (isNaN(prodDate.getTime())) return false;
           
@@ -656,7 +685,6 @@ export default function ProductionManagement() {
   return (
     <>
       <div className="container">
-        {/* Dashboard Section */}
         <div className="dashboard">
           <h2>Production Dashboard</h2>
           <div className="production-overview">
@@ -855,8 +883,8 @@ export default function ProductionManagement() {
                   </div>
                 </div>
                 <div>
-                  <input 
-                    type="datetime-local" 
+                  <input
+                    type="datetime-local"
                     {...register("startDate")} 
                   />
                 </div>
@@ -894,78 +922,78 @@ export default function ProductionManagement() {
             </div>
           </div>
         )}
-        <div className="table-container">
-          <h3>Production List</h3>
-          {loading ? (
-            <p>Loading...</p>
-          ) : error ? (
-            <p className="error-message">Error: {error.message || "Failed to load productions"}</p>
-          ) : filteredProductions.length === 0 ? (
-            <p>No productions found.</p>
-          ) : (
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>ID</th>
-                  <th>Name</th>
-                  <th>Start Date</th>
-                  <th>End Date</th>
-                  <th>Status</th>
-                  <th>Output Product</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredProductions.map((production) => (
-                  <tr key={production._id}>
-                    <td>{production.productionId}</td>
-                    <td>{production.productionName}</td>
-                    <td>{production.startDate ? new Date(production.startDate).toLocaleString() : 'N/A'}</td>
-                    <td>{production.endDate && !isNaN(new Date(production.endDate)) ? new Date(production.endDate).toLocaleString() : 'N/A'}</td>
-                    <td className="status-column">
-                      <span 
-                        className={`status-badge ${production.status.toLowerCase().replace(' ', '-')}`}
-                      >
-                        {production.status}
-                      </span>
-                      <button
-                        className="status-button"
-                        onClick={() => handleStatusChange(production._id, production.status)}
-                      >
-                        Update Status
-                      </button>
-                    </td>
-                    <td>
-                      {production.outputProduct ? (
-                        <>
-                          <div>{production.outputProduct.productName}</div>
-                          <div>Qty: {production.outputProduct.quantity}</div>
-                        </>
-                      ) : (
-                        "N/A"
-                      )}
-                    </td>
-                    <td>
-                      <button
-                        className="edit-button"
-                        onClick={() => handleEdit(production)}
-                      >
-                        Edit
-                      </button>
-                      <button
-                        className="delete-button"
-                        onClick={() => handleDelete(production._id)}
-                      >
-                        Delete
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
-      </div>
-    </>
-  );
+                <div className="table-container">
+                  <h3>Production List</h3>
+                  {loading ? (
+                    <p>Loading...</p>
+                  ) : error ? (
+                    <p className="error-message">Error: {error.message || "Failed to load productions"}</p>
+                  ) : filteredProductions.length === 0 ? (
+                    <p>No productions found.</p>
+                  ) : (
+                    <table className="data-table">
+                      <thead>
+                        <tr>
+                          <th>ID</th>
+                          <th>Name</th>
+                          <th>Start Date</th>
+                          <th>End Date</th>
+                          <th>Status</th>
+                          <th>Output Product</th>
+                          <th>Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filteredProductions.map((production) => (
+                          <tr key={production._id}>
+                            <td>{production.productionId}</td>
+                            <td>{production.productionName}</td>
+                            <td>{production.startDate ? new Date(production.startDate).toLocaleString() : 'N/A'}</td>
+                            <td>{production.endDate && !isNaN(new Date(production.endDate)) ? new Date(production.endDate).toLocaleString() : 'N/A'}</td>
+                            <td className="status-column">
+                              <span 
+                                className={`status-badge ${production.status.toLowerCase().replace(' ', '-')}`}
+                              >
+                                {production.status}
+                              </span>
+                              <button
+                                className="status-button"
+                                onClick={() => handleStatusChange(production._id, production.status)}
+                              >
+                                Update Status
+                              </button>
+                            </td>
+                            <td>
+                              {production.outputProduct ? (
+                                <>
+                                  <div>{production.outputProduct.productName}</div>
+                                  <div>Qty: {production.outputProduct.quantity}</div>
+                                </>
+                              ) : (
+                                "N/A"
+                              )}
+                            </td>
+                            <td>
+                              <button
+                                className="edit-button"
+                                onClick={() => handleEdit(production)}
+                              >
+                                Edit
+                              </button>
+                              <button
+                                className="delete-button"
+                                onClick={() => handleDelete(production._id)}
+                              >
+                                Delete
+                              </button>
+                            </td>
+                          </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+    </div>
+  </>
+  )
 }

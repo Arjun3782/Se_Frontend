@@ -417,6 +417,7 @@ tr:hover {
 
 .overlay {
   position: fixed;
+  width:100%;
   top: 0;
   left: 0;
   right: 0;
@@ -432,7 +433,7 @@ tr:hover {
   background-color: white;
   border-radius: 8px;
   padding: 20px;
-  width: 80%;
+  width: 100%;
   max-width: 800px;
   max-height: 90vh;
   overflow-y: auto;
