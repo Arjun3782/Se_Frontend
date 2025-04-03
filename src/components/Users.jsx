@@ -2,7 +2,17 @@ import React, { useState, useEffect } from "react";
 import axios from "axios";
 import { toast, ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
-import "./Users.css"; // Changed from "./styles/Users.css"
+import "./Users.css";
+
+// Create a function to create authenticated axios instance
+const createAuthAxios = () => {
+  const token = localStorage.getItem('token');
+  return axios.create({
+    headers: {
+      'Authorization': `Bearer ${token}`
+    }
+  });
+};
 
 const Users = () => {
   const [users, setUsers] = useState([]);
@@ -16,7 +26,6 @@ const Users = () => {
     password: "",
     company_name: "",
     role: "staff",
-    // department field removed
     phone: ""
   });
 
@@ -28,13 +37,28 @@ const Users = () => {
   const fetchUsers = async () => {
     try {
       setLoading(true);
-      // Replace with actual API call when ready
-      // const response = await axios.get("http://localhost:5000/api/users", {
-      //   headers: { Authorization: localStorage.getItem("token") }
-      // });
-      // setUsers(response.data);
+      const authAxios = createAuthAxios();
+      const user = JSON.parse(localStorage.getItem('user') || '{}');
+      const companyId = user.companyId;
       
+      if (!companyId) {
+        console.error("No company ID found");
+        setLoading(false);
+        toast.error("Company ID not found");
+        return;
+      }
       
+      // Get users for the company
+      const response = await authAxios.get(`http://localhost:3000/api/user/getUsers/${companyId}`);
+      
+      if (response.data && response.data.data) {
+        setUsers(response.data.data);
+        console.log("Users fetched:", response.data.data);
+      } else {
+        setUsers([]);
+      }
+      
+      setLoading(false);
     } catch (error) {
       console.error("Error fetching users:", error);
       toast.error("Failed to load users");
@@ -53,15 +77,30 @@ const Users = () => {
   const handleAddUser = async (e) => {
     e.preventDefault();
     try {
-      // Replace with actual API call when ready
-      // await axios.post("http://localhost:5000/api/users", formData, {
-      //   headers: { Authorization: localStorage.getItem("token") }
-      // });
+      const authAxios = createAuthAxios();
+      const user = JSON.parse(localStorage.getItem('user') || '{}');
+      const companyId = user.companyId;
       
-      // Mock adding user
-      setUsers([...users, { ...formData, _id: Date.now().toString() }]);
+      if (!companyId) {
+        console.error("No company ID found");
+        toast.error("Company ID not found");
+        return;
+      }
       
-      toast.success("User added successfully");
+      const userData = {
+        ...formData,
+        companyId
+      };
+      
+      const response = await authAxios.post("http://localhost:3000/api/user/register", userData);
+      
+      if (response.data && response.data.data) {
+        setUsers([...users, response.data.data]);
+        toast.success("User added successfully");
+      } else {
+        toast.warning("User added but response format unexpected");
+      }
+      
       setShowAddForm(false);
       setFormData({
         name: "",
@@ -73,7 +112,7 @@ const Users = () => {
       });
     } catch (error) {
       console.error("Error adding user:", error);
-      toast.error("Failed to add user");
+      toast.error(error.response?.data?.error || "Failed to add user");
     }
   };
 
@@ -93,17 +132,32 @@ const Users = () => {
   const handleUpdateUser = async (e) => {
     e.preventDefault();
     try {
-      // Replace with actual API call when ready
-      // await axios.put(`http://localhost:5000/api/users/${editingUser}`, formData, {
-      //   headers: { Authorization: localStorage.getItem("token") }
-      // });
+      const authAxios = createAuthAxios();
       
-      // Mock updating user
-      setUsers(users.map(user => 
-        user._id === editingUser ? { ...user, ...formData, _id: editingUser } : user
-      ));
+      // Don't send password if it's empty
+      const updateData = {...formData};
+      if (!updateData.password) {
+        delete updateData.password;
+      }
       
-      toast.success("User updated successfully");
+      const response = await authAxios.put(
+        `http://localhost:3000/api/user/updateUser/${editingUser}`, 
+        updateData
+      );
+      
+      if (response.data && response.data.data) {
+        setUsers(users.map(user => 
+          user._id === editingUser ? response.data.data : user
+        ));
+        toast.success("User updated successfully");
+      } else {
+        // Fallback to optimistic update
+        setUsers(users.map(user => 
+          user._id === editingUser ? { ...user, ...formData, _id: editingUser } : user
+        ));
+        toast.success("User updated");
+      }
+      
       setShowAddForm(false);
       setEditingUser(null);
       setFormData({
@@ -116,7 +170,7 @@ const Users = () => {
       });
     } catch (error) {
       console.error("Error updating user:", error);
-      toast.error("Failed to update user");
+      toast.error(error.response?.data?.error || "Failed to update user");
     }
   };
 
@@ -124,21 +178,18 @@ const Users = () => {
     if (!window.confirm("Are you sure you want to delete this user?")) return;
     
     try {
-      // Replace with actual API call when ready
-      // await axios.delete(`http://localhost:5000/api/users/${userId}`, {
-      //   headers: { Authorization: localStorage.getItem("token") }
-      // });
+      const authAxios = createAuthAxios();
+      await authAxios.delete(`http://localhost:3000/api/user/deleteUser/${userId}`);
       
-      // Mock deleting user
       setUsers(users.filter(user => user._id !== userId));
-      
       toast.success("User deleted successfully");
     } catch (error) {
       console.error("Error deleting user:", error);
-      toast.error("Failed to delete user");
+      toast.error(error.response?.data?.error || "Failed to delete user");
     }
   };
 
+  // Rest of the component remains the same
   if (loading) {
     return <div className="loading">Loading users...</div>;
   }
@@ -229,23 +280,6 @@ const Users = () => {
               </select>
             </div>
             
-            // In the user form JSX, remove the department field
-            // Look for and remove:
-            {/* Remove this block
-            <div className="form-group">
-              <label htmlFor="department">Department</label>
-              <input
-                type="text"
-                id="department"
-                name="department"
-                value={formData.department}
-                onChange={handleInputChange}
-              />
-            </div>
-            */}
-            
-            // Also remove department from the users table/list display
-            // If you have a table with user data, remove the department column
             <div className="form-group">
               <label>Phone (Optional)</label>
               <input
@@ -264,47 +298,51 @@ const Users = () => {
       )}
 
       <div className="users-list">
-        <table>
-          <thead>
-            <tr>
-              <th>Name</th>
-              <th>Email</th>
-              <th>Company</th>
-              <th>Role</th>
-              <th>Phone</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {users.map(user => (
-              <tr key={user._id}>
-                <td>{user.name}</td>
-                <td>{user.email}</td>
-                <td>{user.company_name}</td>
-                <td>
-                  <span className={`role-badge ${user.role}`}>
-                    {user.role}
-                  </span>
-                </td>
-                <td>{user.phone || "-"}</td>
-                <td className="actions">
-                  <button 
-                    className="edit-btn"
-                    onClick={() => handleEditUser(user)}
-                  >
-                    Edit
-                  </button>
-                  <button 
-                    className="delete-btn"
-                    onClick={() => handleDeleteUser(user._id)}
-                  >
-                    Delete
-                  </button>
-                </td>
+        {users.length === 0 ? (
+          <div className="no-users">No users found. Add a new user to get started.</div>
+        ) : (
+          <table>
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Email</th>
+                <th>Company</th>
+                <th>Role</th>
+                <th>Phone</th>
+                <th>Actions</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {users.map(user => (
+                <tr key={user._id}>
+                  <td>{user.name}</td>
+                  <td>{user.email}</td>
+                  <td>{user.company_name}</td>
+                  <td>
+                    <span className={`role-badge ${user.role}`}>
+                      {user.role}
+                    </span>
+                  </td>
+                  <td>{user.phone || "-"}</td>
+                  <td className="actions">
+                    <button 
+                      className="edit-btn"
+                      onClick={() => handleEditUser(user)}
+                    >
+                      Edit
+                    </button>
+                    <button 
+                      className="delete-btn"
+                      onClick={() => handleDeleteUser(user._id)}
+                    >
+                      Delete
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </div>
       <ToastContainer />
     </div>

@@ -149,51 +149,52 @@ export default function SalesOrderManagement() {
   // Handle ID changes to auto-fill form fields
   const handleIdChange = (name, value) => {
     if (name === "buyerId") {
-      if (buyers[value]) {
-        // Use data from localStorage
+      // Check in existing salesOrders data first
+      const existingBuyer = salesOrders.find(order => 
+        order.b_id === value || order.buyerId === value
+      );
+      
+      if (existingBuyer) {
+        setValue("buyerName", existingBuyer.b_name || existingBuyer.buyerName);
+        setValue("buyerMobile", existingBuyer.ph_no || existingBuyer.buyerMobile);
+        setValue("buyerAddress", existingBuyer.address || existingBuyer.buyerAddress);
+      } else if (buyers[value]) {
+        // Fallback to localStorage if not found in API data
         setValue("buyerName", buyers[value].buyerName);
         setValue("buyerMobile", buyers[value].buyerMobile);
         setValue("buyerAddress", buyers[value].buyerAddress);
-      } else {
-        // Check in existing salesOrders data
-        const existingBuyer = salesOrders.find(order => order.b_id === value);
-        if (existingBuyer) {
-          const buyerData = {
-            buyerName: existingBuyer.b_name,
-            buyerMobile: existingBuyer.ph_no,
-            buyerAddress: existingBuyer.address
-          };
-          setBuyers(prev => ({
-            ...prev,
-            [value]: buyerData
-          }));
-          setValue("buyerName", existingBuyer.b_name);
-          setValue("buyerMobile", existingBuyer.ph_no);
-          setValue("buyerAddress", existingBuyer.address);
-        }
       }
     }
     
     if (name === "productId") {
-      if (products[value]) {
-        // Use data from localStorage
+      console.log("Product ID changed to:", value);
+      
+      // Check in stocks data from API first
+      const existingProduct = stocks.find(stock => 
+        String(stock.productId) === String(value) || 
+        String(stock.p_id) === String(value)
+      );
+      
+      if (existingProduct) {
+        console.log("Found product in API data:", existingProduct);
+        const productName = existingProduct.productName || existingProduct.p_name;
+        const productPrice = existingProduct.price || existingProduct.unitCost;
+        
+        console.log("Setting product name to:", productName);
+        console.log("Setting product price to:", productPrice);
+        
+        // Update form values
+        setValue("productName", productName);
+        setValue("price", productPrice);
+      } else if (products[value]) {
+        // Fallback to localStorage if not found in API data
+        console.log("Using product from localStorage:", products[value]);
         setValue("productName", products[value].productName);
         setValue("price", products[value].price);
       } else {
-        // Check in existing stocks data
-        const existingProduct = stocks.find(stock => stock.p_id === value);
-        if (existingProduct) {
-          const productData = {
-            productName: existingProduct.p_name,
-            price: existingProduct.price
-          };
-          setProducts(prev => ({
-            ...prev,
-            [value]: productData
-          }));
-          setValue("productName", existingProduct.p_name);
-          setValue("price", existingProduct.price);
-        }
+        console.log("Product not found for ID:", value);
+        setValue("productName", "");
+        setValue("price", "");
       }
     }
   };
@@ -434,7 +435,7 @@ export default function SalesOrderManagement() {
             {stocks.length > 0 ? (
               stocks.map((stock, index) => (
                 <div className="product-card" key={stock._id || index}>
-                  <h3>{stock.p_name || "Product"}</h3>
+                  <h3>{stock.productName || "Product"}</h3>
                   <div className="product-details">
                     <p><strong>ID:</strong> {stock.productId || "-"}</p>
                     <p><strong>Available:</strong> {stock.quantity ? Number(stock.quantity).toFixed(2) : '0'} Unit</p>
@@ -444,10 +445,18 @@ export default function SalesOrderManagement() {
                     className="quick-add-btn"
                     onClick={() => {
                       setIsFormOpen(true);
-                      setValue("productId", stock.p_id || "");
-                      setValue("productName", stock.p_name || "");
-                      setValue("price", stock.price ? Number(stock.price) : 0);
-                      handleIdChange("productId", stock.p_id || "");
+                      // Use the correct properties from API data
+                      const id = stock.p_id || stock.productId;
+                      const name = stock.p_name || stock.productName;
+                      const price = stock.unitCost || stock.price || 0;
+                      
+                      console.log("Quick order for product:", {
+                        id, name, price, stock
+                      });
+                      
+                      setValue("productId", id);
+                      setValue("productName", name);
+                      setValue("price", price);
                     }}
                   >
                     Quick Order
@@ -592,14 +601,24 @@ export default function SalesOrderManagement() {
                     {...register("productId", {
                       required: "Product is required",
                     })}
-                    onChange={(e) => handleIdChange("productId", e.target.value)}
+                    onChange={(e) => {
+                      console.log("Select changed to:", e.target.value);
+                      handleIdChange("productId", e.target.value);
+                    }}
                   >
                     <option value="">Select Product</option>
-                    {stocks.map(stock => (
-                      <option key={stock._id} value={stock.p_id}>
-                        {stock.p_name} - Available: {stock.quantity.toFixed(2)} kg
-                      </option>
-                    ))}
+                    {stocks.map(stock => {
+                      // Make sure we're using the correct ID property
+                      const id = stock.p_id || stock.productId;
+                      const name = stock.p_name || stock.productName;
+                      const qty = stock.quantity || 0;
+                      
+                      return (
+                        <option key={stock._id || id} value={id}>
+                          {name} - Available: {qty.toFixed(2)} unit
+                        </option>
+                      );
+                    })}
                   </select>
                   {errors.productId && (
                     <span className="error">{errors.productId.message}</span>
@@ -627,8 +646,14 @@ export default function SalesOrderManagement() {
                       required: "Quantity is required",
                       min: { value: 0.01, message: "Quantity must be positive" },
                       validate: value => {
-                        const selectedProduct = stocks.find(stock => stock.p_id === watch("productId"));
-                        return !selectedProduct || Number(value) <= selectedProduct.quantity || 
+                        const productId = watch("productId");
+                        const selectedProduct = stocks.find(stock => 
+                          String(stock.p_id) === String(productId) || 
+                          String(stock.productId) === String(productId)
+                        );
+                        
+                        if (!selectedProduct) return true;
+                        return Number(value) <= selectedProduct.quantity || 
                           `Maximum available quantity is ${selectedProduct.quantity}`;
                       }
                     })}
