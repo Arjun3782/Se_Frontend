@@ -30,6 +30,7 @@ export default function ProductionManagement() {
     };
   }, []);
   const rawMaterials = useSelector(state => state.material.rawMaterial || []);
+  console.log('test',rawMaterials);
   const materialLoading = useSelector(state => state.material.loading);
   const materialError = useSelector(state => state.material.error);
   const [productions, setProductions] = useState([]);
@@ -318,7 +319,6 @@ export default function ProductionManagement() {
           }
         ]);
       }
-      
       dialog.close();
       document.body.removeChild(dialog);
     });
