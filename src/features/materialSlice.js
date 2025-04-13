@@ -26,7 +26,7 @@ export const addRawMaterial = createAsyncThunk(
       // Create a new object with companyId from user data
       const dataWithCompany = {
         ...data,
-        companyId: userData.companyId || userData.company_id || "64f9c51e5644c2a2f9de6d4b" // Use user's company or fallback
+        companyId: userData.companyId || userData.company_id // Use user's company or fallback
       };
       
       console.log("User data:", userData);
@@ -172,7 +172,7 @@ export const fetchRawMaterial = createAsyncThunk(
       // Ensure token is properly formatted
       const authToken = token.startsWith('Bearer ') ? token : `Bearer ${token}`;
       
-      console.log("Fetching raw materials with token:", authToken.substring(0, 15) + "...");
+      // console.log("Fetching raw materials with token:", authToken.substring(0, 15) + "...");
       
       const response = await axios.get(
         "http://localhost:3000/api/rawMaterial/getRawMaterial",
@@ -184,14 +184,11 @@ export const fetchRawMaterial = createAsyncThunk(
         }
       );
       
-      console.log("Raw materials fetch response:", response.data);
+      // console.log("Raw materials fetch response:", response.data.r_data);
       
       // Return the data in a consistent format
       return {
-        r_data: response.data.data || [],
-        data: response.data.data || [],
-        // Include the original response for debugging
-        originalResponse: response.data
+        r_data: response.data.r_data || [],
       };
     } catch (error) {
       console.error("Error fetching raw materials:", error.response?.data || error.message);
@@ -220,7 +217,6 @@ export const fetchRawMaterial = createAsyncThunk(
             
             return {
               r_data: retryResponse.data.data || [],
-              data: retryResponse.data.data || []
             };
           }
         } catch (refreshError) {
@@ -601,7 +597,16 @@ const materialSlice = createSlice({
     });
     builder.addCase(addRawMaterial.fulfilled, (state, action) => {
       state.loading = false;
-      state.rawMaterial.push(action.payload.data);
+      // Fix: Check if rawMaterial is an array before pushing
+      if (Array.isArray(state.rawMaterial)) {
+        state.rawMaterial.push(action.payload.data);
+      } else if (state.r_data && Array.isArray(state.r_data)) {
+        // If rawMaterial is not an array but r_data is, push to r_data
+        state.r_data.push(action.payload.data);
+      } else {
+        // Initialize as array if neither exists
+        state.r_data = [action.payload.data];
+      }
     });
     builder.addCase(addRawMaterial.rejected, (state, action) => {
       state.loading = false;
@@ -613,6 +618,7 @@ const materialSlice = createSlice({
     builder.addCase(fetchProductions.fulfilled, (state, action) => {
       state.loading = false;
       state.productions = action.payload;
+      console.log("production",state.productions);
     });
     builder.addCase(fetchProductions.rejected, (state, action) => {
       state.loading = false;
@@ -673,18 +679,6 @@ const materialSlice = createSlice({
       state.loading = false;
       state.error = action.payload || { error: "Failed to fetch raw materials" };
     });
-    // builder.addCase(fetchStockItems.pending, (state) => {
-    //   state.loading = true;
-    // });
-    // builder.addCase(fetchStockItems.fulfilled, (state, action) => {
-    //   state.loading = false;
-    //   state.stock = action.payload;
-    // });
-    // builder.addCase(fetchStockItems.rejected, (state, action) => {
-    //   state.loading = false;
-    //   state.error = action.payload;
-    // });
-    // ... other cases
   }
 });
 

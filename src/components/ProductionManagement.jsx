@@ -1,13 +1,14 @@
-import { useEffect, useState } from "react";
-import { useDispatch, useSelector } from "react-redux";
-import { 
-  fetchRawMaterial, 
-  addCompletedProductionToStockOrders,
-  addCompletedProductionToStock  
-} from "../features/materialSlice";
-import { useForm } from "react-hook-form";
 import axios from "axios";
+import { useEffect, useState } from "react";
+import { useForm } from "react-hook-form";
+import { useDispatch, useSelector } from "react-redux";
+import {
+  addCompletedProductionToStock,
+  addCompletedProductionToStockOrders,
+  fetchRawMaterial
+} from "../features/materialSlice";
 import "./ProductionManagement.css";
+
 
 const createAuthAxios = () => {
   const token = localStorage.getItem('token');
@@ -87,69 +88,6 @@ export default function ProductionManagement() {
     }
   };
   
-  const updateStatus = async (id, newStatus) => {
-    try {
-      const production = productions.find(p => p._id === id);
-      const authAxios = createAuthAxios();
-      console.log("Before update API call - token:", localStorage.getItem('token').substring(0, 10) + "...");
-      const updatedData = { status: newStatus };
-      
-      if (newStatus === "Completed") {
-        updatedData.endDate = new Date();
-      }
-      
-      const updatedProduction = await authAxios.put(
-        `/api/production/updateProduction/${id}`,
-        updatedData
-      );
-      
-      console.log("After update API call - token:", localStorage.getItem('token').substring(0, 10) + "...");
-      
-      setProductions(prev => 
-        prev.map(prod => prod._id === id ? updatedProduction.data.data : prod)
-      );
-      setError(null);
-      
-      if (newStatus === "Completed") {
-        const completedProduction = updatedProduction.data.data || production;
-        
-        console.log("Before addCompletedProduction API call - token:", localStorage.getItem('token').substring(0, 10) + "...");
-        
-        try {
-          await authAxios.post(
-            "/api/product/addCompletedProduction",
-            { production: completedProduction }
-          );
-          
-          console.log("After addCompletedProduction API call - token:", localStorage.getItem('token').substring(0, 10) + "...");
-          console.log("Production data added to products database");
-        } catch (err) {
-          console.error("Failed to add production to products:", err);
-          
-          if (err.response && err.response.status === 401) {
-            alert("Your session has expired. Please login again.");
-            localStorage.removeItem('token');
-            window.location.href = '/login';
-          }
-        }
-        
-        setSelectedProduction(completedProduction);
-        dispatch(addCompletedProductionToStockOrders(completedProduction));
-        setShowSalesOrderForm(true);
-      }
-      
-      return updatedProduction.data;
-    } catch (err) {
-      console.error("Error updating production:", err.response?.data || err.message);
-      setError(err.response?.data || { error: err.message });
-      if (err.response?.status === 401) {
-        window.location.href = '/login';
-      }
-      throw err;
-    } finally {
-      setLoading(false);
-    }
-  };
   
   useEffect(() => {
     const token = localStorage.getItem('token');
@@ -220,7 +158,6 @@ export default function ProductionManagement() {
   const [searchDate, setSearchDate] = useState("");
   const [selectedMaterials, setSelectedMaterials] = useState([]);
   const [availableMaterials, setAvailableMaterials] = useState([]);
-  const watchMaterials = watch("materials");
   const watchOutputQuantity = watch("outputProduct.quantity");
   
   useEffect(() => {
@@ -305,48 +242,38 @@ export default function ProductionManagement() {
       setValue("outputProduct.totalCost", totalMaterialCost.toFixed(2));
     }
   }, [selectedMaterials, watchOutputQuantity, setValue]);
+  // Add new state for modals
+  const [materialModalOpen, setMaterialModalOpen] = useState(false);
+  const [selectedMaterialGroup, setSelectedMaterialGroup] = useState(null);
+  const [statusModalOpen, setStatusModalOpen] = useState(false);
+  const [selectedProductionId, setSelectedProductionId] = useState(null);
+  const [selectedProductionStatus, setSelectedProductionStatus] = useState('');
+  
   const handleAddMaterial = (materialGroup) => {
-    const dialog = document.createElement("dialog");
-    dialog.className = "material-dialog";  
-    dialog.innerHTML = `
-      <h3>Add ${materialGroup.p_name}</h3>
-      <p>Available: ${materialGroup.totalQuantity.toFixed(2)} kg</p>
-      <input type="number" id="quantity-input" min="0.1" max="${materialGroup.totalQuantity}" step="0.1" value="1">
-      <div class="dialog-buttons">
-        <button id="cancel-btn">Cancel</button>
-        <button id="add-btn">Add</button>
-      </div>
-    `;
-    document.body.appendChild(dialog);
-    dialog.showModal();
-    document.getElementById("add-btn").addEventListener("click", () => {
-      const quantityInput = document.getElementById("quantity-input");
-      const quantity = parseFloat(quantityInput.value);
-      if (quantity > 0 && quantity <= materialGroup.totalQuantity) {
-        console.log("Adding material to selection:", {
-          materialGroup,
-          quantity,
-          firstMaterial: materialGroup.materials[0]
-        });
-        setSelectedMaterials(prev => [
-          ...prev, 
-          {
-            p_id: materialGroup.p_id,
-            p_name: materialGroup.p_name,
-            quantityUsed: quantity,
-            price: materialGroup.price || materialGroup.materials[0]?.price || 0,
-            materialId: materialGroup.materials[0]?._id || materialGroup.p_id
-          }
-        ]);
-      }
-      dialog.close();
-      document.body.removeChild(dialog);
-    });
-    
-    document.getElementById("cancel-btn").addEventListener("click", () => {
-      dialog.close();
-      document.body.removeChild(dialog);
-    });
+    setSelectedMaterialGroup(materialGroup);
+    setMaterialModalOpen(true);
+  };
+  
+  const handleAddMaterialConfirm = (quantity) => {
+    if (selectedMaterialGroup) {
+      console.log("Adding material to selection:", {
+        materialGroup: selectedMaterialGroup,
+        quantity,
+        firstMaterial: selectedMaterialGroup.materials[0]
+      });
+      
+      setSelectedMaterials(prev => [
+        ...prev, 
+        {
+          p_id: selectedMaterialGroup.p_id,
+          p_name: selectedMaterialGroup.p_name,
+          quantityUsed: quantity,
+          price: selectedMaterialGroup.price || selectedMaterialGroup.materials[0]?.price || 0,
+          materialId: selectedMaterialGroup.materials[0]?._id || selectedMaterialGroup.p_id
+        }
+      ]);
+    }
+    setMaterialModalOpen(false);
   };
   
   const handleRemoveMaterial = (index) => {
@@ -446,11 +373,6 @@ export default function ProductionManagement() {
         return;
       }
     }
-    const productionData = {
-      ...data,
-      materials: selectedMaterials,
-      companyId
-    };
     try {
       console.log("Selected materials to submit:", selectedMaterials);
       console.log("Available materials according to frontend:", availableMaterials);
@@ -555,115 +477,87 @@ export default function ProductionManagement() {
     }
   };
   
+  // Replace handleStatusChange with this React-friendly version
   const handleStatusChange = (id, currentStatus) => {
-    const statusOptions = ["Planned", "In Progress", "Completed", "Cancelled"];
-    const dialog = document.createElement("dialog");
-    dialog.className = "status-dialog";
-    const content = document.createElement("div");
-    content.innerHTML = `
-      <h3>Update Production Status</h3>
-      <div class="status-options">
-        ${statusOptions.map(status => `
-          <button class="status-option ${status === currentStatus ? 'active' : ''}" 
-                  data-status="${status}">
-            ${status}
-          </button>
-        `).join('')}
-      </div>
-      <div class="dialog-buttons">
-        <button id="cancel-btn">Cancel</button>
-      </div>
-    `;
-    dialog.appendChild(content);
-    document.body.appendChild(dialog);
-    dialog.showModal();
-    const statusButtons = dialog.querySelectorAll('.status-option');
-    statusButtons.forEach(button => {
-      button.addEventListener('click', async () => {
-        const newStatus = button.getAttribute('data-status');
-        if (newStatus !== currentStatus) {
-          try {
-            const production = productions.find(p => p._id === id);
-            const token = localStorage.getItem('token');
-            console.log("token is :",token);
-            if (!token) {
-              alert("Your session has expired. Please login again.");
-              window.location.href = '/login';
-              return;
-            }
-            const authAxios = createAuthAxios();
-            const updatedData = { 
-              status: newStatus 
-            };
-            if (newStatus === "Completed") {
-              updatedData.endDate = new Date();
-            }
-            console.log("Using token:", token.substring(0, 10) + "...");
-            const updatedProduction = await authAxios.put(
-              `/api/production/updateProduction/${id}`,
-              updatedData
-            );
-            console.log("After update API call - token:", token.substring(0, 10) + "...");
-            setProductions(prev => 
-              prev.map(prod => prod._id === id ? updatedProduction.data.data : prod)
-            );
-            if (newStatus === "Completed") {
-              const completedProduction = updatedProduction.data.data || production;
-              console.log("Dispatching completed production to stock");
-              console.log("Completed production data:", completedProduction);
-              if (completedProduction && 
-                  completedProduction.outputProduct && 
-                  completedProduction.outputProduct.productId && 
-                  completedProduction.outputProduct.productName && 
-                  completedProduction.outputProduct.quantity) {
-                console.log("product_id",completedProduction.outputProduct.productId);
-                dispatch(addCompletedProductionToStock({
-                  productId: completedProduction.outputProduct.productId,
-                  productName: completedProduction.outputProduct.productName,
-                  quantity: completedProduction.outputProduct.quantity,
-                  unitCost: completedProduction.outputProduct.unitCost,
-                  totalCost: completedProduction.outputProduct.totalCost,
-                  productionId: completedProduction._id,
-                  notes: `Produced from production ${completedProduction.productionName}`
-                }));
-                dispatch(addCompletedProductionToStockOrders(completedProduction));
-                setSelectedProduction(completedProduction);
-                setShowSalesOrderForm(true);
-              } else {
-                console.error("Cannot add to stock: Missing output product data", completedProduction);
-                alert("Cannot complete production: Missing output product information. Please edit the production to add output product details.");
-              }
-            }
-          } catch (error) {
-            console.error("Failed to update status:", error);
+    setSelectedProductionId(id);
+    setSelectedProductionStatus(currentStatus);
+    setStatusModalOpen(true);
+  };
+  
+  const handleStatusChangeConfirm = async (id, newStatus) => {
+    if (newStatus !== selectedProductionStatus) {
+      try {
+        const production = productions.find(p => p._id === id);
+        const token = localStorage.getItem('token');
+        console.log("token is :", token);
+        if (!token) {
+          alert("Your session has expired. Please login again.");
+          window.location.href = '/login';
+          return;
+        }
+        
+        const authAxios = createAuthAxios();
+        const updatedData = { 
+          status: newStatus 
+        };
+        
+        if (newStatus === "Completed") {
+          updatedData.endDate = new Date();
+        }
+        
+        console.log("Using token:", token.substring(0, 10) + "...");
+        const updatedProduction = await authAxios.put(
+          `/api/production/updateProduction/${id}`,
+          updatedData
+        );
+        
+        console.log("After update API call - token:", token.substring(0, 10) + "...");
+        setProductions(prev => 
+          prev.map(prod => prod._id === id ? updatedProduction.data.data : prod)
+        );
+        
+        if (newStatus === "Completed") {
+          const completedProduction = updatedProduction.data.data || production;
+          console.log("Dispatching completed production to stock");
+          console.log("Completed production data:", completedProduction);
+          
+          if (completedProduction && 
+              completedProduction.outputProduct && 
+              completedProduction.outputProduct.productId && 
+              completedProduction.outputProduct.productName && 
+              completedProduction.outputProduct.quantity) {
+                
+            console.log("product_id", completedProduction.outputProduct.productId);
+            dispatch(addCompletedProductionToStock({
+              productId: completedProduction.outputProduct.productId,
+              productName: completedProduction.outputProduct.productName,
+              quantity: completedProduction.outputProduct.quantity,
+              unitCost: completedProduction.outputProduct.unitCost,
+              totalCost: completedProduction.outputProduct.totalCost,
+              productionId: completedProduction._id,
+              notes: `Produced from production ${completedProduction.productionName}`
+            }));
             
-            if (error.response && error.response.status === 401) {
-              alert("Your session has expired. Please login again.");
-              localStorage.removeItem('token');
-              window.location.href = '/login';
-            } else {
-              alert(`Failed to update production: ${error.response?.data?.message || error.message}`);
-            }
-          } finally {
-            if (document.body.contains(dialog)) {
-              dialog.close();
-              document.body.removeChild(dialog);
-            }
-          }
-        } else {
-          if (document.body.contains(dialog)) {
-            dialog.close();
-            document.body.removeChild(dialog);
+            dispatch(addCompletedProductionToStockOrders(completedProduction));
+            setSelectedProduction(completedProduction);
+            setShowSalesOrderForm(true);
+          } else {
+            console.error("Cannot add to stock: Missing output product data", completedProduction);
+            alert("Cannot complete production: Missing output product information. Please edit the production to add output product details.");
           }
         }
-      });
-    });
-    document.getElementById("cancel-btn").addEventListener("click", () => {
-      if (document.body.contains(dialog)) {
-        dialog.close();
-        document.body.removeChild(dialog);
+      } catch (error) {
+        console.error("Failed to update status:", error);
+        
+        if (error.response && error.response.status === 401) {
+          alert("Your session has expired. Please login again.");
+          localStorage.removeItem('token');
+          window.location.href = '/login';
+        } else {
+          alert(`Failed to update production: ${error.response?.data?.message || error.message}`);
+        }
       }
-    });
+    }
   };
   
   const filteredProductions = searchDate

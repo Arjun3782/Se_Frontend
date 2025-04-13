@@ -45,7 +45,6 @@ export const refreshToken = async () => {
 };
 
 // Function to setup axios interceptors for automatic token refresh
-// In your setupAxiosInterceptors function
 export const setupAxiosInterceptors = () => {
   // Clear existing interceptors
   axios.interceptors.response.handlers = [];
@@ -69,7 +68,7 @@ export const setupAxiosInterceptors = () => {
         error.response && 
         error.response.status === 401 && 
         !originalRequest._retry &&
-        !originalRequest.url?.includes('/refresh')
+        !originalRequest.url?.includes('/refresh-token')
       ) {
         console.log("Received 401 error, attempting to refresh token");
         originalRequest._retry = true;
@@ -89,8 +88,9 @@ export const setupAxiosInterceptors = () => {
             // Retry the original request
             return axios(originalRequest);
           } else {
-            console.log("Token refresh failed, but not redirecting automatically");
-            // Let the component handle the error
+            console.log("Token refresh failed, redirecting to login");
+            // If refresh failed, redirect to login
+            window.location.href = '/login';
             return Promise.reject({
               ...error,
               isAuthError: true
@@ -98,7 +98,8 @@ export const setupAxiosInterceptors = () => {
           }
         } catch (refreshError) {
           console.error("Error in refresh token process:", refreshError);
-          // Let the component handle the error
+          // Redirect to login on refresh error
+          window.location.href = '/login';
           return Promise.reject({
             ...error,
             isAuthError: true
