@@ -63,6 +63,20 @@ export default function ProductionManagement() {
     }
   }, [materialError]);
   
+  // Add this useEffect to fetch data when component mounts
+  useEffect(() => {
+    console.log("Component mounted, fetching initial data...");
+    fetchProductions();
+    dispatch(fetchRawMaterial())
+      .unwrap()
+      .then(response => {
+        console.log("Raw materials fetched successfully on mount:", response);
+      })
+      .catch(error => {
+        console.error("Error fetching raw materials on mount:", error);
+      });
+  }, [dispatch]); // Only run on component mount
+  
   const fetchProductions = async () => {
     setLoading(true);
     try {
@@ -74,6 +88,17 @@ export default function ProductionManagement() {
       const authAxios = createAuthAxios();
       const response = await authAxios.get("/api/production/getProductions");
       setProductions(response.data.data || []);
+      
+      // Generate next production ID based on existing productions
+      if (response.data.data && response.data.data.length > 0) {
+        generateNextProductionId(response.data.data);
+      } else {
+        // Default ID if no productions exist
+        const year = new Date().getFullYear();
+        setValue("productionId", `PRD-${year}-0001`);
+        setValue("outputProduct.productId", `PROD-0001`);
+      }
+      
       setError(null);
     } catch (err) {
       console.error("Error fetching productions:", err.response?.data || err.message);
@@ -88,45 +113,61 @@ export default function ProductionManagement() {
     }
   };
   
-  
-  useEffect(() => {
-    const token = localStorage.getItem('token');
-    if (token) {
-      fetchProductions();
+  // Add this new function to generate IDs
+  const generateNextProductionId = (productionsData) => {
+    try {
+      // Find production IDs that match the pattern PRD-YYYY-XXXX
+      const productionIds = productionsData
+        .map(prod => prod.productionId)
+        .filter(id => /^PRD-\d{4}-\d{4}$/.test(id));
       
-      console.log("Dispatching fetchRawMaterial action");
+      if (productionIds.length === 0) {
+        // No matching IDs found, create a new one
+        const year = new Date().getFullYear();
+        setValue("productionId", `PRD-${year}-0001`);
+        setValue("outputProduct.productId", `PROD-0001`);
+        return;
+      }
       
-      axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+      // Sort IDs to find the highest number
+      productionIds.sort();
+      const lastId = productionIds[productionIds.length - 1];
       
-      dispatch(fetchRawMaterial())
-        .unwrap()
-        .then(response => {
-          console.log("Raw materials fetch successful:", response);
-          
-          if (response && (response.r_data || response.data)) {
-            console.log("Raw materials data received:", response.r_data || response.data);
-          } else {
-            console.warn("Raw materials response is missing expected data structure");
-            
-            setTimeout(() => {
-              console.log("Retrying raw materials fetch...");
-              dispatch(fetchRawMaterial());
-            }, 1000);
-          }
-        })
-        .catch(error => {
-          console.error("Error in raw materials fetch:", error);
-          
-          setTimeout(() => {
-            console.log("Retrying raw materials fetch after error...");
-            dispatch(fetchRawMaterial());
-          }, 2000);
-        });
-    } else {
-      window.location.href = '/login';
+      // Extract parts from the last ID
+      const parts = lastId.split('-');
+      const year = new Date().getFullYear();
+      const lastYear = parseInt(parts[1]);
+      const lastNumber = parseInt(parts[2]);
+      
+      let nextNumber;
+      if (lastYear === year) {
+        // Same year, increment the number
+        nextNumber = lastNumber + 1;
+      } else {
+        // New year, start from 1
+        nextNumber = 1;
+      }
+      
+      // Format the new IDs
+      const paddedNumber = nextNumber.toString().padStart(4, '0');
+      const newProductionId = `PRD-${year}-${paddedNumber}`;
+      const newProductId = `PROD-${paddedNumber}`;
+      
+      // Set the values in the form
+      setValue("productionId", newProductionId);
+      setValue("outputProduct.productId", newProductId);
+      
+      console.log("Generated new production ID:", newProductionId);
+      console.log("Generated new product ID:", newProductId);
+    } catch (error) {
+      console.error("Error generating production ID:", error);
+      // Fallback to a timestamp-based ID if generation fails
+      const timestamp = Date.now().toString().slice(-8);
+      setValue("productionId", `PRD-${timestamp}`);
+      setValue("outputProduct.productId", `PROD-${timestamp}`);
     }
-  }, [dispatch]);
-  
+  };
+
   const {
     register,
     handleSubmit,
@@ -576,6 +617,41 @@ export default function ProductionManagement() {
       })
     : productions;
   
+  // Add this function to handle adding a new production
+  const handleAddProduction = () => {
+    // Reset the form first
+    reset({
+      productionId: "",
+      productionName: "",
+      startDate: new Date().toISOString().slice(0, 16),
+      status: "Planned",
+      materials: [],
+      outputProduct: {
+        productId: "",
+        productName: "",
+        quantity: "",
+        unitCost: "",
+        totalCost: "",
+      },
+      notes: "",
+    });
+    
+    // Generate IDs based on existing productions
+    if (productions && productions.length > 0) {
+      generateNextProductionId(productions);
+    } else {
+      // Default ID if no productions exist
+      const year = new Date().getFullYear();
+      setValue("productionId", `PRD-${year}-0001`);
+      setValue("outputProduct.productId", `PROD-0001`);
+    }
+    
+    setIsUpdating(false);
+    setUpdateId(null);
+    setSelectedMaterials([]);
+    setIsFormOpen(true);
+  };
+  
   return (
     <>
       <div className="container">
@@ -619,7 +695,7 @@ export default function ProductionManagement() {
           >
             ↻ Refresh Data
           </button>
-          <button className="add-button" onClick={() => setIsFormOpen(true)}>
+          <button className="add-button" onClick={handleAddProduction}>
             + Add Production
           </button>
         </div>
