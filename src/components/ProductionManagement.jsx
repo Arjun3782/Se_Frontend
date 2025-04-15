@@ -951,6 +951,52 @@ const filteredProductions = searchDate
           </div>
         )}
                 <div className="table-container">
+                {statusModalOpen && (
+        <div className="overlay">
+          <div className="form-popup status-modal">
+            <h3>Update Production Status</h3>
+            <div className="status-options">
+              <button 
+                className={`status-option planned ${selectedProductionStatus === 'Planned' ? 'current' : ''}`}
+                onClick={() => handleStatusChangeConfirm(selectedProductionId, 'Planned')}
+              >
+                Planned
+              </button>
+              <button 
+                className={`status-option in-progress ${selectedProductionStatus === 'In Progress' ? 'current' : ''}`}
+                onClick={() => handleStatusChangeConfirm(selectedProductionId, 'In Progress')}
+              >
+                In Progress
+              </button>
+              <button 
+                className={`status-option completed ${selectedProductionStatus === 'Completed' ? 'current' : ''}`}
+                onClick={() => handleStatusChangeConfirm(selectedProductionId, 'Completed')}
+              >
+                Completed
+              </button>
+              <button 
+                className={`status-option cancelled ${selectedProductionStatus === 'Cancelled' ? 'current' : ''}`}
+                onClick={() => handleStatusChangeConfirm(selectedProductionId, 'Cancelled')}
+              >
+                Cancelled
+              </button>
+            </div>
+            <div className="modal-buttons">
+              <button 
+                className="cancel-button"
+                onClick={() => setStatusModalOpen(false)}
+              >
+                Cancel
+              </button>
+              <button className='apply-button' onClick={()=> setStatusModalOpen(false)}>Apply</button>
+            </div>
+            <div>
+              
+              </div>
+          </div>
+        </div>
+      )}
+      
                   <h3>Production List</h3>
                   {loading ? (
                     <p>Loading...</p>
@@ -972,6 +1018,7 @@ const filteredProductions = searchDate
                         </tr>
                       </thead>
                       <tbody>
+                      
                         {filteredProductions.map((production) => (
                           <tr key={production._id}>
                             <td>{production.productionId}</td>
