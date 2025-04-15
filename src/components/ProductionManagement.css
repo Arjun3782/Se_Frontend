@@ -961,4 +961,23 @@ tr:hover {
 .dialog-buttons button:hover {
   opacity: 0.9;
 }
+
+.quantity-input-container {
+  margin-bottom: 10px;
+  width: 100%;
+}
+
+.quantity-input {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 14px;
+}
+
+.quantity-input:focus {
+  outline: none;
+  border-color: #4a90e2;
+  box-shadow: 0 0 0 2px rgba(74, 144, 226, 0.2);
+}
   

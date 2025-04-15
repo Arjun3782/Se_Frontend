@@ -8,8 +8,6 @@ import {
   fetchRawMaterial
 } from "../features/materialSlice";
 import "./ProductionManagement.css";
-
-
 const createAuthAxios = () => {
   const token = localStorage.getItem('token');
   return axios.create({
@@ -20,12 +18,10 @@ const createAuthAxios = () => {
     }
   });
 };
-
 export default function ProductionManagement() {
   const dispatch = useDispatch();
   const [selectedProduction, setSelectedProduction] = useState(null);
   const [showSalesOrderForm, setShowSalesOrderForm] = useState(false);
-  
   useEffect(() => {
     const token = localStorage.getItem('token');
     if (token) {
@@ -35,7 +31,6 @@ export default function ProductionManagement() {
       delete axios.defaults.headers.common['Authorization'];
     };
   }, []);
-  
   const rawMaterials = useSelector(state => {
     if (state.material && state.material.rawMaterial && state.material.rawMaterial.originalResponse) {
       return state.material.rawMaterial.originalResponse.r_data || [];
@@ -49,7 +44,6 @@ export default function ProductionManagement() {
       return [];
     }
   });
-  
   const materialLoading = useSelector(state => state.material.loading);
   const materialError = useSelector(state => state.material.error);
   const [productions, setProductions] = useState([]);
@@ -65,13 +59,9 @@ export default function ProductionManagement() {
   
   // Add this useEffect to fetch data when component mounts
   useEffect(() => {
-    console.log("Component mounted, fetching initial data...");
     fetchProductions();
     dispatch(fetchRawMaterial())
       .unwrap()
-      .then(response => {
-        console.log("Raw materials fetched successfully on mount:", response);
-      })
       .catch(error => {
         console.error("Error fetching raw materials on mount:", error);
       });
@@ -156,9 +146,6 @@ export default function ProductionManagement() {
       // Set the values in the form
       setValue("productionId", newProductionId);
       setValue("outputProduct.productId", newProductId);
-      
-      console.log("Generated new production ID:", newProductionId);
-      console.log("Generated new product ID:", newProductId);
     } catch (error) {
       console.error("Error generating production ID:", error);
       // Fallback to a timestamp-based ID if generation fails
@@ -202,7 +189,6 @@ export default function ProductionManagement() {
   const watchOutputQuantity = watch("outputProduct.quantity");
   
   useEffect(() => {
-    console.log("Raw materials from Redux:", rawMaterials);
     if (!rawMaterials) {
       console.log("Raw materials is null or undefined");
       setAvailableMaterials([]);
@@ -210,23 +196,17 @@ export default function ProductionManagement() {
     }
     let materialsToProcess = [];
     if (rawMaterials && rawMaterials.r_data && Array.isArray(rawMaterials.r_data)) {
-      console.log("Processing r_data array with length:", rawMaterials.r_data.length);
       materialsToProcess = rawMaterials.r_data;
     } else if (rawMaterials && rawMaterials.data && Array.isArray(rawMaterials.data)) {
-      console.log("Processing data array with length:", rawMaterials.data.length);
       materialsToProcess = rawMaterials.data;
     } else if (Array.isArray(rawMaterials)) {
-      console.log("Processing raw materials as array with length:", rawMaterials.length);
       materialsToProcess = rawMaterials;
     } else {
-      console.log("Raw materials has unexpected structure:", typeof rawMaterials);
-      console.log("Raw materials keys:", Object.keys(rawMaterials));
       setAvailableMaterials([]);
       return;
     }
     const materialsJSON = JSON.stringify(materialsToProcess);
     if (materialsJSON === JSON.stringify(availableMaterials.flatMap(m => m.materials || []))) {
-      console.log("Materials haven't changed, skipping processing");
       return;
     }
     if (materialsToProcess.length === 0) {
@@ -234,7 +214,6 @@ export default function ProductionManagement() {
       setAvailableMaterials([]);
       return;
     }
-    console.log("First material item:", materialsToProcess[0]);
     try {
       const groupedMaterials = materialsToProcess.reduce((acc, material) => {
         if (!material) {
@@ -265,7 +244,6 @@ export default function ProductionManagement() {
       }, {});
       
       const materialsArray = Object.values(groupedMaterials);
-      console.log("Processed available materials:", materialsArray);
       setAvailableMaterials(materialsArray);
     } catch (error) {
       console.error("Error processing materials:", error);
@@ -291,331 +269,381 @@ export default function ProductionManagement() {
   const [selectedProductionStatus, setSelectedProductionStatus] = useState('');
   
   const handleAddMaterial = (materialGroup) => {
-    setSelectedMaterialGroup(materialGroup);
-    setMaterialModalOpen(true);
-  };
-  
-  const handleAddMaterialConfirm = (quantity) => {
-    if (selectedMaterialGroup) {
+      // Use the quantity directly from the input field
+      const quantity = parseFloat(materialGroup.inputQuantity);
+      
+      if (!quantity || isNaN(quantity) || quantity <= 0) {
+        alert("Please enter a valid quantity greater than 0");
+        return;
+      }
+      
+      if (quantity > materialGroup.totalQuantity) {
+        alert(`Cannot add more than available quantity (${materialGroup.totalQuantity.toFixed(2)} kg)`);
+        return;
+      }
+      
       console.log("Adding material to selection:", {
-        materialGroup: selectedMaterialGroup,
+        materialGroup,
         quantity,
-        firstMaterial: selectedMaterialGroup.materials[0]
+        firstMaterial: materialGroup.materials[0]
       });
       
       setSelectedMaterials(prev => [
         ...prev, 
         {
-          p_id: selectedMaterialGroup.p_id,
-          p_name: selectedMaterialGroup.p_name,
+          p_id: materialGroup.p_id,
+          p_name: materialGroup.p_name,
           quantityUsed: quantity,
-          price: selectedMaterialGroup.price || selectedMaterialGroup.materials[0]?.price || 0,
-          materialId: selectedMaterialGroup.materials[0]?._id || selectedMaterialGroup.p_id
+          price: materialGroup.price || materialGroup.materials[0]?.price || 0,
+          materialId: materialGroup.materials[0]?._id || materialGroup.p_id
         }
       ]);
-    }
-    setMaterialModalOpen(false);
-  };
-  
-  const handleRemoveMaterial = (index) => {
-    setSelectedMaterials(prev => prev.filter((_, i) => i !== index));
-  };
-  
-  const addProduction = async (productionData) => {
-    setLoading(true);
-    try {
-      const response = await axios.post(
-        "http://localhost:3000/api/production/addProduction",
-        productionData
+      
+      // Clear the input quantity after adding
+      setAvailableMaterials(prev => 
+        prev.map(mat => 
+          mat.p_id === materialGroup.p_id 
+            ? {...mat, inputQuantity: ''} 
+            : mat
+        )
       );
-      setProductions(prev => [...prev, response.data.data]);
-      setError(null);
-      return response.data;
-    } catch (err) {
-      console.error("Error adding production:", err.response?.data || err.message);
-      setError(err.response?.data || { error: err.message });
-      if (err.response?.status === 401) {
-        window.location.href = '/login';
-      }
-      throw err;
-    } finally {
-      setLoading(false);
-    }
-  };
+      setSelectedMaterialGroup(materialGroup);
+      setMaterialModalOpen(true);
+    };
+    
+    // We can remove the materialModalOpen state and related code since we're now
+    // handling the quantity directly in the input field
   
-  const updateProductionById = async (id, productionData) => {
-    setLoading(true);
-    try {
-      const response = await axios.put(
-        `http://localhost:3000/api/production/updateProduction/${id}`,
-        productionData
-      );
-      setProductions(prev => 
-        prev.map(prod => prod._id === id ? response.data.data : prod)
-      );
-      setError(null);
-      return response.data;
-    } catch (err) {
-      console.error("Error updating production:", err.response?.data || err.message);
-      setError(err.response?.data || { error: err.message });
-      if (err.response?.status === 401) {
-        window.location.href = '/login';
+
+
+const handleAddMaterialConfirm = (quantity) => {
+  if (selectedMaterialGroup) {
+    console.log("Adding material to selection:", {
+      materialGroup: selectedMaterialGroup,
+      quantity,
+      firstMaterial: selectedMaterialGroup.materials[0]
+    });
+    
+    setSelectedMaterials(prev => [
+      ...prev, 
+      {
+        p_id: selectedMaterialGroup.p_id,
+        p_name: selectedMaterialGroup.p_name,
+        quantityUsed: quantity,
+        price: selectedMaterialGroup.price || selectedMaterialGroup.materials[0]?.price || 0,
+        materialId: selectedMaterialGroup.materials[0]?._id || selectedMaterialGroup.p_id
       }
-      throw err;
-    } finally {
-      setLoading(false);
-    }
-  };
-  
-  const deleteProductionById = async (id) => {
-    setLoading(true);
-    try {
-      await axios.delete(`http://localhost:3000/api/production/deleteProduction/${id}`);
-      setProductions(prev => prev.filter(prod => prod._id !== id));
-      setError(null);
-    } catch (err) {
-      console.error("Error deleting production:", err.response?.data || err.message);
-      setError(err.response?.data || { error: err.message });
-      if (err.response?.status === 401) {
-        window.location.href = '/login';
-      }
-      throw err;
-    } finally {
-      setLoading(false);
-    }
-  };
-  const onSubmit = async (data) => {
-    const token = localStorage.getItem('token');
-    if (!token) {
-      console.error("No authentication token found");
+    ]);
+  }
+  setMaterialModalOpen(false);
+};
+
+const handleRemoveMaterial = (index) => {
+  setSelectedMaterials(prev => prev.filter((_, i) => i !== index));
+};
+
+const addProduction = async (productionData) => {
+  setLoading(true);
+  try {
+    const response = await axios.post(
+      "http://localhost:3000/api/production/addProduction",
+      productionData
+    );
+    setProductions(prev => [...prev, response.data.data]);
+    setError(null);
+    return response.data;
+  } catch (err) {
+    console.error("Error adding production:", err.response?.data || err.message);
+    setError(err.response?.data || { error: err.message });
+    if (err.response?.status === 401) {
       window.location.href = '/login';
+    }
+    throw err;
+  } finally {
+    setLoading(false);
+  }
+};
+
+const updateProductionById = async (id, productionData) => {
+  setLoading(true);
+  try {
+    const response = await axios.put(
+      `http://localhost:3000/api/production/updateProduction/${id}`,
+      productionData
+    );
+    setProductions(prev => 
+      prev.map(prod => prod._id === id ? response.data.data : prod)
+    );
+    setError(null);
+    return response.data;
+  } catch (err) {
+    console.error("Error updating production:", err.response?.data || err.message);
+    setError(err.response?.data || { error: err.message });
+    if (err.response?.status === 401) {
+      window.location.href = '/login';
+    }
+    throw err;
+  } finally {
+    setLoading(false);
+  }
+};
+
+const deleteProductionById = async (id) => {
+  setLoading(true);
+  try {
+    await axios.delete(`http://localhost:3000/api/production/deleteProduction/${id}`);
+    setProductions(prev => prev.filter(prod => prod._id !== id));
+    setError(null);
+  } catch (err) {
+    console.error("Error deleting production:", err.response?.data || err.message);
+    setError(err.response?.data || { error: err.message });
+    if (err.response?.status === 401) {
+      window.location.href = '/login';
+    }
+    throw err;
+  } finally {
+    setLoading(false);
+  }
+};
+const onSubmit = async (data) => {
+  const token = localStorage.getItem('token');
+  if (!token) {
+    console.error("No authentication token found");
+    window.location.href = '/login';
+    return;
+  }
+  const user = JSON.parse(localStorage.getItem('user') || '{}');
+  const companyId = user.companyId;
+  if (!companyId) {
+    console.error("No company ID found");
+    return;
+  }
+  if (selectedMaterials.length === 0) {
+    alert("Please select at least one raw material for this production");
+    return;
+  }
+  try {
+    await dispatch(fetchRawMaterial()).unwrap();
+    console.log("Raw materials refreshed before submission");
+  } catch (error) {
+    console.error("Failed to refresh raw materials:", error);
+  }
+  if (!isUpdating) {
+    const existingProduction = productions.find(p => p.productionId === data.productionId);
+    if (existingProduction) {
+      alert(`Production ID "${data.productionId}" already exists. Please use a different ID.`);
       return;
     }
-    const user = JSON.parse(localStorage.getItem('user') || '{}');
-    const companyId = user.companyId;
-    if (!companyId) {
-      console.error("No company ID found");
-      return;
-    }
-    if (selectedMaterials.length === 0) {
-      alert("Please select at least one raw material for this production");
-      return;
-    }
-    try {
-      await dispatch(fetchRawMaterial()).unwrap();
-      console.log("Raw materials refreshed before submission");
-    } catch (error) {
-      console.error("Failed to refresh raw materials:", error);
-    }
-    if (!isUpdating) {
-      const existingProduction = productions.find(p => p.productionId === data.productionId);
-      if (existingProduction) {
-        alert(`Production ID "${data.productionId}" already exists. Please use a different ID.`);
+  }
+  try {
+    for (const material of selectedMaterials) {
+      const availableMaterial = availableMaterials.find(m => m.p_id === material.p_id);
+      console.log(`Checking material ${material.p_name}:`, {
+        required: material.quantityUsed,
+        available: availableMaterial ? availableMaterial.totalQuantity : 0,
+        materialId: material.materialId || material.p_id,
+        p_id: material.p_id
+      });
+      const requiredQty = parseFloat(material.quantityUsed);
+      const availableQty = availableMaterial ? parseFloat(availableMaterial.totalQuantity) : 0;
+      if (!availableMaterial || availableQty < requiredQty) {
+        alert(`Error: Insufficient quantity available for ${material.p_name}. 
+                 Available: ${availableQty.toFixed(2)} kg, 
+                 Required: ${requiredQty.toFixed(2)} kg`);
         return;
       }
     }
-    try {
-      console.log("Selected materials to submit:", selectedMaterials);
-      console.log("Available materials according to frontend:", availableMaterials);
-      for (const material of selectedMaterials) {
-        const availableMaterial = availableMaterials.find(m => m.p_id === material.p_id);
-        console.log(`Checking material ${material.p_name}:`, {
-          required: material.quantityUsed,
-          available: availableMaterial ? availableMaterial.totalQuantity : 0,
-          materialId: material.materialId || material.p_id,
-          p_id: material.p_id
-        });
-        const requiredQty = parseFloat(material.quantityUsed);
-        const availableQty = availableMaterial ? parseFloat(availableMaterial.totalQuantity) : 0;
-        console.log('test',availableQty);
-        if (!availableMaterial || availableQty < requiredQty) {
-          alert(`Error: Insufficient quantity available for ${material.p_name}. 
-                 Available: ${availableQty.toFixed(2)} kg, 
-                 Required: ${requiredQty.toFixed(2)} kg`);
-          return;
-        }
-      }
-      const materialsWithIds = selectedMaterials.map(material => ({
+    const outputQuantity = parseFloat(data.outputProduct.quantity) || 1;
+    const materialsWithIds = selectedMaterials.map(material => {
+      const totalQuantityUsed = material.quantityUsed * outputQuantity;
+      return {
         ...material,
-        materialId: material.materialId || material.p_id, // Use p_id as fallback
-        p_id: material.p_id
-      }));
-      const productionData = {
-        ...data,
-        materials: materialsWithIds,
-        companyId
+        materialId: material.materialId || material.p_id,
+        p_id: material.p_id,
+        quantityUsed: totalQuantityUsed, // Adjust quantity based on output quantity
+        originalQuantity: material.quantityUsed // Keep original quantity for reference
       };
-      if (isUpdating) {
-        await updateProductionById(updateId, productionData);
-        setIsUpdating(false);
-        setUpdateId(null);
-        reset();
-        setIsFormOpen(false);
-        setSelectedMaterials([]);
-        fetchProductions();
-        dispatch(fetchRawMaterial());
-      } else {
-        await addProduction(productionData);
-        reset();
-        setIsFormOpen(false);
-        setSelectedMaterials([]);
-        fetchProductions();
-        dispatch(fetchRawMaterial());
-      }
-    } catch (error) {
-      console.error("Failed to save production:", error);
-      if (error.response?.status === 404) {
-        alert("Error: The server endpoint for this operation doesn't exist. Please contact your administrator.");
-      } else if (error.response?.data?.error?.includes('duplicate key error')) {
-        alert(`Production ID "${data.productionId}" already exists. Please use a different ID.`);
-      } else if (error.response?.data?.error?.includes('insufficient quantity')) {
-        alert(`Error: Some materials no longer have sufficient quantity available according to the server. 
-               Please click "Refresh Data" and try again.`);
-        dispatch(fetchRawMaterial());
-      } else {
-        alert(`Error: ${error.response?.data?.error || "Failed to save production. Please try again."}`);
-      }
-    }
-  };
-  
-  const handleEdit = (production) => {
-    setSelectedMaterials(production.materials || []);
-    reset({
-      productionId: production.productionId,
-      productionName: production.productionName,
-      startDate: new Date(production.startDate).toISOString().slice(0, 16),
-      status: production.status,
-      materials: production.materials || [],
-      outputProduct: production.outputProduct || {
-        productId: "",
-        productName: "",
-        quantity: "",
-        unitCost: "",
-        totalCost: "",
-      },
-      notes: production.notes || "",
     });
-    setIsUpdating(true);
-    setUpdateId(production._id);
-    setIsFormOpen(true);
-  };
-  
-  const handleDelete = async (id) => {
-    const token = localStorage.getItem('token');
-    if (!token) {
-      console.error("No authentication token found");
-      window.location.href = '/login';
-      return;
+    const productionData = {
+      ...data,
+      materials: materialsWithIds,
+      companyId,
+      updateInventory: true
+    };
+    const materialReductions = selectedMaterials.map(material => ({
+      materialId: material.materialId || material.p_id,
+      quantity: -parseFloat(material.quantityUsed) // Negative value to reduce stock
+    }));
+    if (isUpdating) {
+      await updateProductionById(updateId, productionData);
+      setIsUpdating(false);
+      setUpdateId(null);
+      reset();
+      setIsFormOpen(false);
+      setSelectedMaterials([]);
+      fetchProductions();
+      dispatch(fetchRawMaterial());
+    } else {
+      await addProduction(productionData);
+      reset();
+      setIsFormOpen(false);
+      setSelectedMaterials([]);
+      fetchProductions();
+      dispatch(fetchRawMaterial());
     }
-    if (window.confirm("Are you sure you want to delete this production?")) {
-      try {
-        await deleteProductionById(id);
-        fetchProductions();
-        dispatch(fetchRawMaterial());
-      } catch (error) {
-        console.error("Failed to delete production:", error);
+  } catch (error) {
+    console.error("Failed to save production:", error);
+    if (error.response?.status === 404) {
+      alert("Error: The server endpoint for this operation doesn't exist. Please contact your administrator.");
+    } else if (error.response?.data?.error?.includes('duplicate key error')) {
+      alert(`Production ID "${data.productionId}" already exists. Please use a different ID.`);
+    } else if (error.response?.data?.error?.includes('insufficient quantity')) {
+      alert(`Error: Some materials no longer have sufficient quantity available according to the server. 
+             Please click "Refresh Data" and try again.`);
+      dispatch(fetchRawMaterial());
+    } else {
+      alert(`Error: ${error.response?.data?.error || "Failed to save production. Please try again."}`);
+    }
+  }
+};
+
+const handleEdit = (production) => {
+  setSelectedMaterials(production.materials || []);
+  reset({
+    productionId: production.productionId,
+    productionName: production.productionName,
+    startDate: new Date(production.startDate).toISOString().slice(0, 16),
+    status: production.status,
+    materials: production.materials || [],
+    outputProduct: production.outputProduct || {
+      productId: "",
+      productName: "",
+      quantity: "",
+      unitCost: "",
+      totalCost: "",
+    },
+    notes: production.notes || "",
+  });
+  setIsUpdating(true);
+  setUpdateId(production._id);
+  setIsFormOpen(true);
+};
+
+const handleDelete = async (id) => {
+  const token = localStorage.getItem('token');
+  if (!token) {
+    console.error("No authentication token found");
+    window.location.href = '/login';
+    return;
+  }
+  if (window.confirm("Are you sure you want to delete this production?")) {
+    try {
+      await deleteProductionById(id);
+      fetchProductions();
+      dispatch(fetchRawMaterial());
+    } catch (error) {
+      console.error("Failed to delete production:", error);
+    }
+  }
+};
+
+// Replace handleStatusChange with this React-friendly version
+const handleStatusChange = (id, currentStatus) => {
+  setSelectedProductionId(id);
+  setSelectedProductionStatus(currentStatus);
+  setStatusModalOpen(true);
+};
+
+const handleStatusChangeConfirm = async (id, newStatus) => {
+  if (newStatus !== selectedProductionStatus) {
+    try {
+      const production = productions.find(p => p._id === id);
+      const token = localStorage.getItem('token');
+      console.log("token is :", token);
+      if (!token) {
+        alert("Your session has expired. Please login again.");
+        window.location.href = '/login';
+        return;
+      }
+      
+      const authAxios = createAuthAxios();
+      const updatedData = { 
+        status: newStatus 
+      };
+      
+      if (newStatus === "Completed") {
+        updatedData.endDate = new Date();
+      }
+      
+      console.log("Using token:", token.substring(0, 10) + "...");
+      const updatedProduction = await authAxios.put(
+        `/api/production/updateProduction/${id}`,
+        updatedData
+      );
+      
+      console.log("After update API call - token:", token.substring(0, 10) + "...");
+      setProductions(prev => 
+        prev.map(prod => prod._id === id ? updatedProduction.data.data : prod)
+      );
+      
+      if (newStatus === "Completed") {
+        const completedProduction = updatedProduction.data.data || production;
+        console.log("Dispatching completed production to stock");
+        console.log("Completed production data:", completedProduction);
+        
+        if (completedProduction && 
+            completedProduction.outputProduct && 
+            completedProduction.outputProduct.productId && 
+            completedProduction.outputProduct.productName && 
+            completedProduction.outputProduct.quantity) {
+          
+        console.log("product_id", completedProduction.outputProduct.productId);
+        dispatch(addCompletedProductionToStock({
+          productId: completedProduction.outputProduct.productId,
+          productName: completedProduction.outputProduct.productName,
+          quantity: completedProduction.outputProduct.quantity,
+          unitCost: completedProduction.outputProduct.unitCost,
+          totalCost: completedProduction.outputProduct.totalCost,
+          productionId: completedProduction._id,
+          notes: `Produced from production ${completedProduction.productionName}`
+        }));
+        
+        dispatch(addCompletedProductionToStockOrders(completedProduction));
+        setSelectedProduction(completedProduction);
+        setShowSalesOrderForm(true);
+      } else {
+        console.error("Cannot add to stock: Missing output product data", completedProduction);
+        alert("Cannot complete production: Missing output product information. Please edit the production to add output product details.");
+      }
+    }}catch (error) {
+      console.error("Failed to update status:", error);
+      
+      if (error.response && error.response.status === 401) {
+        alert("Your session has expired. Please login again.");
+        localStorage.removeItem('token');
+        window.location.href = '/login';
+      } else {
+        alert(`Failed to update production: ${error.response?.data?.message || error.message}`);
       }
     }
-  };
-  
-  // Replace handleStatusChange with this React-friendly version
-  const handleStatusChange = (id, currentStatus) => {
-    setSelectedProductionId(id);
-    setSelectedProductionStatus(currentStatus);
-    setStatusModalOpen(true);
-  };
-  
-  const handleStatusChangeConfirm = async (id, newStatus) => {
-    if (newStatus !== selectedProductionStatus) {
+  }
+};
+
+const filteredProductions = searchDate
+  ? productions.filter((prod) => {
+      if (!prod.startDate) return false;
       try {
-        const production = productions.find(p => p._id === id);
-        const token = localStorage.getItem('token');
-        console.log("token is :", token);
-        if (!token) {
-          alert("Your session has expired. Please login again.");
-          window.location.href = '/login';
-          return;
-        }
+        const prodDate = new Date(prod.startDate);
+        if (isNaN(prodDate.getTime())) return false;
         
-        const authAxios = createAuthAxios();
-        const updatedData = { 
-          status: newStatus 
-        };
-        
-        if (newStatus === "Completed") {
-          updatedData.endDate = new Date();
-        }
-        
-        console.log("Using token:", token.substring(0, 10) + "...");
-        const updatedProduction = await authAxios.put(
-          `/api/production/updateProduction/${id}`,
-          updatedData
-        );
-        
-        console.log("After update API call - token:", token.substring(0, 10) + "...");
-        setProductions(prev => 
-          prev.map(prod => prod._id === id ? updatedProduction.data.data : prod)
-        );
-        
-        if (newStatus === "Completed") {
-          const completedProduction = updatedProduction.data.data || production;
-          console.log("Dispatching completed production to stock");
-          console.log("Completed production data:", completedProduction);
-          
-          if (completedProduction && 
-              completedProduction.outputProduct && 
-              completedProduction.outputProduct.productId && 
-              completedProduction.outputProduct.productName && 
-              completedProduction.outputProduct.quantity) {
-                
-            console.log("product_id", completedProduction.outputProduct.productId);
-            dispatch(addCompletedProductionToStock({
-              productId: completedProduction.outputProduct.productId,
-              productName: completedProduction.outputProduct.productName,
-              quantity: completedProduction.outputProduct.quantity,
-              unitCost: completedProduction.outputProduct.unitCost,
-              totalCost: completedProduction.outputProduct.totalCost,
-              productionId: completedProduction._id,
-              notes: `Produced from production ${completedProduction.productionName}`
-            }));
-            
-            dispatch(addCompletedProductionToStockOrders(completedProduction));
-            setSelectedProduction(completedProduction);
-            setShowSalesOrderForm(true);
-          } else {
-            console.error("Cannot add to stock: Missing output product data", completedProduction);
-            alert("Cannot complete production: Missing output product information. Please edit the production to add output product details.");
-          }
-        }
+        const itemDate = prodDate.toISOString().split('T')[0];
+        return itemDate === searchDate;
       } catch (error) {
-        console.error("Failed to update status:", error);
-        
-        if (error.response && error.response.status === 401) {
-          alert("Your session has expired. Please login again.");
-          localStorage.removeItem('token');
-          window.location.href = '/login';
-        } else {
-          alert(`Failed to update production: ${error.response?.data?.message || error.message}`);
-        }
+        console.error("Date parsing error:", error);
+        return false;
       }
-    }
-  };
-  
-  const filteredProductions = searchDate
-    ? productions.filter((prod) => {
-        if (!prod.startDate) return false;
-        try {
-          const prodDate = new Date(prod.startDate);
-          if (isNaN(prodDate.getTime())) return false;
-          
-          const itemDate = prodDate.toISOString().split('T')[0];
-          return itemDate === searchDate;
-        } catch (error) {
-          console.error("Date parsing error:", error);
-          return false;
-        }
-      })
-    : productions;
+    })
+  : productions;
   
   // Add this function to handle adding a new production
   const handleAddProduction = () => {
@@ -651,7 +679,8 @@ export default function ProductionManagement() {
     setSelectedMaterials([]);
     setIsFormOpen(true);
   };
-  
+
+
   return (
     <>
       <div className="container">
@@ -681,13 +710,9 @@ export default function ProductionManagement() {
           <button 
             className="refresh-button" 
             onClick={() => {
-              console.log("Manually refreshing data...");
               fetchProductions();
               dispatch(fetchRawMaterial())
                 .unwrap()
-                .then(response => {
-                  console.log("Raw materials fetched successfully:", response);
-                })
                 .catch(error => {
                   console.error("Error fetching raw materials:", error);
                 });
@@ -710,6 +735,7 @@ export default function ProductionManagement() {
                       required: "Production ID is required",
                     })}
                     placeholder="Production ID"
+                    readOnly={!isUpdating}
                   />
                   {errors.productionId && (
                     <span className="error">{errors.productionId.message}</span>
@@ -728,8 +754,6 @@ export default function ProductionManagement() {
                 </div>
                 <div className="material-selection-section">
                   <h4>Select Raw Materials</h4>
-                  {console.log("Available materials in render:", availableMaterials)}
-                  {console.log("Raw materials from Redux in render:", rawMaterials)}
                   <div className="available-materials">
                     <h5>Available Materials</h5>
                     {availableMaterials && availableMaterials.length > 0 ? (
@@ -738,10 +762,44 @@ export default function ProductionManagement() {
                           <div key={materialGroup.p_id} className="material-card">
                             <h6>{materialGroup.p_name}</h6>
                             <p>Available: {materialGroup.totalQuantity.toFixed(2)} kg</p>
+                            {/* Replace the empty input with a functional quantity input */}
+                            <div className="quantity-input-container">
+                              <input 
+                                type="number" 
+                                min="0.01" 
+                                max={materialGroup.totalQuantity} 
+                                step="0.01"
+                                placeholder="Quantity (kg)"
+                                className="quantity-input"
+                                value={materialGroup.inputQuantity || ''}
+                                onChange={(e) => {
+                                  const value = parseFloat(e.target.value);
+                                  // Update the quantity in the availableMaterials array
+                                  setAvailableMaterials(prev => 
+                                    prev.map(mat => 
+                                      mat.p_id === materialGroup.p_id 
+                                        ? {...mat, inputQuantity: e.target.value} 
+                                        : mat
+                                    )
+                                  );
+                                }}
+                              />
+                            </div>
                             <button 
                               type="button" 
                               className="add-material-btn"
-                              onClick={() => handleAddMaterial(materialGroup)}
+                              onClick={() => {
+                                const quantity = parseFloat(materialGroup.inputQuantity);
+                                if (!quantity || isNaN(quantity) || quantity <= 0) {
+                                  alert("Please enter a valid quantity greater than 0");
+                                  return;
+                                }
+                                if (quantity > materialGroup.totalQuantity) {
+                                  alert(`Cannot add more than available quantity (${materialGroup.totalQuantity.toFixed(2)} kg)`);
+                                  return;
+                                }
+                                handleAddMaterial(materialGroup);
+                              }}
                             >
                               + Add
                             </button>
@@ -826,10 +884,10 @@ export default function ProductionManagement() {
                   <div>
                     <input
                       type="number"
-                      step="0.01"
+                      step="1"
                       {...register("outputProduct.quantity", {
                         required: "Quantity is required",
-                        min: { value: 0.01, message: "Quantity must be positive" },
+                        min: { value: 0, message: "Quantity must be positive" },
                       })}
                       placeholder="Output Quantity (kg)"
                     />
@@ -960,10 +1018,11 @@ export default function ProductionManagement() {
                           </tr>
                   ))}
                 </tbody>
-              </table>
-            )}
+                    </table>
+                  )}
           </div>
     </div>
   </>
-  )
-}
+  );
+};
+
