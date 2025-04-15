@@ -199,6 +199,13 @@ export default function SalesOrderManagement() {
     }
   };
 
+  const getQuantity = (stock) => {
+    // Check all possible property names for quantity
+    if (stock.quantity !== undefined) return stock.quantity;
+    if (stock.p_quantity !== undefined) return stock.p_quantity;
+    if (stock.stockQuantity !== undefined) return stock.stockQuantity;
+    return 0;
+  };
   // Handle form submission
   const onSubmit = async (data) => {
     const token = localStorage.getItem('token');
@@ -215,24 +222,26 @@ export default function SalesOrderManagement() {
       console.error("No company ID found");
       return;
     }
-
-    // Check if selected product has enough stock
-    const selectedProduct = stocks.find(stock => stock.p_id === data.productId);
+    console.log('Stocks array:', stocks);
+    // Or if you want to see just the p_id values:
+    console.log('Stock p_ids:', stocks.map(stock => stock.p_id || stock.productId));
+    console.log(`Selected product ID: ${data.productId}`)
+    const selectedProduct = stocks.find(stock => stock.productId === data.productId);
+    console.log('test quantity', selectedProduct, data);
     if (!selectedProduct || selectedProduct.quantity < Number(data.quantity)) {
       alert(`Not enough stock available. Current stock: ${selectedProduct ? selectedProduct.quantity : 0}`);
       return;
     }
-
     const salesOrderData = {
-      b_id: data.buyerId,
-      b_name: data.buyerName,
-      ph_no: data.buyerMobile,
-      address: data.buyerAddress,
-      p_id: data.productId,
-      p_name: data.productName,
+      buyerId: data.buyerId,
+      buyerName: data.buyerName,
+      buyerMobile: data.buyerMobile,
+      buyerAddress: data.buyerAddress,
+      productId: data.productId,
+      productName: data.productName,
       quantity: Number(data.quantity),
       price: Number(data.price),
-      total_price: Number(data.totalPrice),
+      totalPrice: Number(data.totalPrice),
       date: data.date,
       companyId
     };
@@ -257,7 +266,7 @@ export default function SalesOrderManagement() {
       } else {
         // Add new sales order
         const response = await authAxios.post(
-          'http://localhost:3000/api/sales/addSalesOrder',
+          'http://localhost:3000/api/salesOrder/createSalesOrder',
           salesOrderData
         );
         
@@ -269,9 +278,9 @@ export default function SalesOrderManagement() {
       
       // Inside onSubmit function, update the stock refresh call
       // Update stock quantity
-      await authAxios.post('http://localhost:3000/api/product/updateQuantity', {
-        p_id: data.productId,
-        quantity: -Number(data.quantity) // Negative to reduce stock
+      await authAxios.post('http://localhost:3000/api/product/addToStock', {
+      p_id: data.productId,
+      quantity: -Number(data.quantity) // Negative to reduce stock
       });
       
       // Refresh stocks data
@@ -437,9 +446,9 @@ export default function SalesOrderManagement() {
                 <div className="product-card" key={stock._id || index}>
                   <h3>{stock.productName || "Product"}</h3>
                   <div className="product-details">
-                    <p><strong>ID:</strong> {stock.productId || "-"}</p>
-                    <p><strong>Available:</strong> {stock.quantity ? Number(stock.quantity).toFixed(2) : '0'} Unit</p>
-                    <p><strong>Price:</strong> ₹{stock.unitCost? Number(stock.unitCost).toFixed(2) : '0'}/Unit</p>
+                    <p><strong>ID:</strong> {stock.productId || stock.p_id || "-"}</p>
+                    <p><strong>Available:</strong> {getQuantity(stock) ? Number(getQuantity(stock)).toFixed(2) : '0'} Unit</p>
+                    <p><strong>Price:</strong> ₹{stock.unitCost || stock.price || 0 ? Number(stock.unitCost || stock.price || 0).toFixed(2) : '0'}/Unit</p>
                   </div>
                   <button 
                     className="quick-add-btn"
@@ -653,8 +662,9 @@ export default function SalesOrderManagement() {
                         );
                         
                         if (!selectedProduct) return true;
-                        return Number(value) <= selectedProduct.quantity || 
-                          `Maximum available quantity is ${selectedProduct.quantity}`;
+                        const availableQty = getQuantity(selectedProduct);
+                        return Number(value) <= Number(availableQty) || 
+                          `Maximum available quantity is ${Number(availableQty).toFixed(2)}`;
                       }
                     })}
                     placeholder="Quantity (kg)"
