@@ -647,11 +647,17 @@ const filteredProductions = searchDate
   
   // Add this function to handle adding a new production
   const handleAddProduction = () => {
+    const now = new Date();
+    const localDatetime = now.getFullYear() + '-' + 
+                          String(now.getMonth() + 1).padStart(2, '0') + '-' + 
+                          String(now.getDate()).padStart(2, '0') + 'T' + 
+                          String(now.getHours()).padStart(2, '0') + ':' + 
+                          String(now.getMinutes()).padStart(2, '0');
     // Reset the form first
     reset({
       productionId: "",
       productionName: "",
-      startDate: new Date().toISOString().slice(0, 16),
+      startDate: localDatetime,
       status: "Planned",
       materials: [],
       outputProduct: {
