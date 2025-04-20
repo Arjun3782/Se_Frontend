@@ -37,7 +37,6 @@ export default function Navbar() {
         {user && user.role === "admin" && (
           <>
             <li><Link to="/users">Users</Link></li>
-            <li><Link to="/companies">Companies</Link></li>
           </>
         )}
       </ul>

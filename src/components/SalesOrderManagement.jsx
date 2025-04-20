@@ -375,13 +375,13 @@ export default function SalesOrderManagement() {
     setLoading(true);
     try {
       const authAxios = createAuthAxios();
-      await authAxios.delete(`http://localhost:3000/api/sales/deleteSalesOrder/${id}`);
+      await authAxios.delete(`http://localhost:3000/api/salesOrder/deleteSalesOrder/${id}`);
       
       // Update local state
       setSalesOrders(prev => prev.filter(order => order._id !== id));
       
       // Refresh stocks data
-      const stocksResponse = await authAxios.get('http://localhost:3000/api/stock/getStocks');
+      const stocksResponse = await authAxios.get('http://localhost:3000/api/product/getStockItems');
       if (stocksResponse.data && stocksResponse.data.data) {
         setStocks(stocksResponse.data.data);
       }
