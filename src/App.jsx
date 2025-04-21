@@ -1,14 +1,13 @@
 import React from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
-import Navbar from "./components/Navbar"; // This imports Navbar
+import Navbar from "./components/Navbar"; 
 import Login from "./components/Login";
 import Dashboard from "./components/Dashboard"; 
 import RawMaterials from "./components/RawMaterialManagement";
 import Production from "./components/ProductionManagement";
-// import StockOrder from "./components/StockOrderManagement";
-import SalesOrderManagement from "./components/SalesOrderManagement"; // Changed from SalesOrderForm
+import SalesOrderManagement from "./components/SalesOrderManagement"; 
 import Users from "./components/Users";
-import "./App.css"; // Changed from "./assets/styles/App.css"
+import "./App.css"; 
 
 // Protected route component
 const ProtectedRoute = ({ children, allowedRoles = [] }) => {
