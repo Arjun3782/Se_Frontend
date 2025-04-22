@@ -19,7 +19,7 @@
   border-radius: 16px;
   box-shadow: 0 15px 35px rgba(0, 0, 0, 0.2);
   overflow: hidden;
-  min-height: 680px;
+  min-height: 700px;
   backdrop-filter: blur(10px);
 }
 
